@@ -15,12 +15,13 @@ export default function LeagueView({ leagueId, onBack }) {
   const [league, setLeague] = useState(null)
   const [ratings, setRatings] = useState([])
   
-  // États pour la saisie de note
+  // États pour la saisie de note et le planning
   const currentWeek = getWeekNumber(new Date())
-  const [selectedWeekToRate, setSelectedWeekToRate] = useState(currentWeek)
+  const currentYear = new Date().getFullYear()
   
-  // Filtre pour l'historique ('all' ou un numéro de semaine spécifique)
+  const [selectedWeekToRate, setSelectedWeekToRate] = useState(currentWeek)
   const [selectedWeekFilter, setSelectedWeekFilter] = useState('all')
+  const [bakeMaster, setBakeMaster] = useState(null) // Pâtissier assigné pour la semaine en cours
 
   const [scores, setScores] = useState({
     taste: 5,
@@ -44,7 +45,7 @@ export default function LeagueView({ leagueId, onBack }) {
     return Math.ceil(((date - yearStart) / 86400000 + 1) / 7)
   }
 
-  // Chargement des données de la ligue et des avis
+  // Chargement des données de la ligue, des avis et du planning de la semaine
   const fetchData = async () => {
     if (!leagueId) return
     setLoading(true)
@@ -62,7 +63,29 @@ export default function LeagueView({ leagueId, onBack }) {
       setLeague(leagueData)
     }
 
-    // 2. Récupération des notes de la ligue
+    // 2. Récupération du Pâtissier assigné pour la semaine en cours (Changement auto chaque lundi)
+    const { data: scheduleData, error: scheduleErr } = await supabase
+      .from('league_schedule')
+      .select(`
+        week_number,
+        year,
+        assigned_user_id,
+        profiles:assigned_user_id (
+          username
+        )
+      `)
+      .eq('league_id', leagueId)
+      .eq('week_number', currentWeek)
+      .eq('year', currentYear)
+      .maybeSingle()
+
+    if (scheduleErr) {
+      console.error('Erreur planning :', scheduleErr)
+    } else {
+      setBakeMaster(scheduleData)
+    }
+
+    // 3. Récupération des notes de la ligue
     const { data: ratingsData, error: ratingsErr } = await supabase
       .from('ratings')
       .select(`
@@ -76,6 +99,7 @@ export default function LeagueView({ leagueId, onBack }) {
         comment,
         created_at,
         user_id,
+        voter_id,
         week_number,
         profiles (
           username
@@ -87,20 +111,23 @@ export default function LeagueView({ leagueId, onBack }) {
     if (ratingsErr) {
       console.error('Erreur notes :', ratingsErr)
     } else {
-      setRatings(ratingsData || [])
+      const formattedRatings = ratingsData || []
+      setRatings(formattedRatings)
 
       // Pré-remplir si l'utilisateur a déjà noté pour la semaine sélectionnée
       if (user) {
-        const existing = (ratingsData || []).find(
-          (r) => r.user_id === user.id && (r.week_number === selectedWeekToRate || (!r.week_number && selectedWeekToRate === currentWeek))
+        const existing = formattedRatings.find(
+          (r) => 
+            (r.user_id === user.id || r.voter_id === user.id) && 
+            (r.week_number === selectedWeekToRate || (!r.week_number && selectedWeekToRate === currentWeek))
         )
         if (existing) {
           setScores({
-            taste: existing.taste || 5,
+            taste: existing.taste || existing.gout || 5,
             texture: existing.texture || 5,
-            appearance: existing.appearance || 5,
-            baking: existing.baking || 5,
-            indulgence: existing.indulgence || 5
+            appearance: existing.appearance || existing.apparence || 5,
+            baking: existing.baking || existing.cuisson || 5,
+            indulgence: existing.indulgence || existing.gourmandise || 5
           })
           setComment(existing.comment || '')
         } else {
@@ -136,7 +163,9 @@ export default function LeagueView({ leagueId, onBack }) {
 
     const globalScore = Number(calculateAverage(scores))
     const existingRating = ratings.find(
-      (r) => (r.user_id === user.id || r.voter_id === user.id) && (r.week_number === selectedWeekToRate || (!r.week_number && selectedWeekToRate === currentWeek))
+      (r) => 
+        (r.user_id === user.id || r.voter_id === user.id) && 
+        (r.week_number === selectedWeekToRate || (!r.week_number && selectedWeekToRate === currentWeek))
     )
 
     const payload = {
@@ -179,7 +208,7 @@ export default function LeagueView({ leagueId, onBack }) {
       console.error('Erreur enregistrement :', error)
       setMessage({
         type: 'error',
-        text: `Erreur (${error.code || '400'}) : ${error.message || 'Impossible d\'enregistrer votre note.'}`
+        text: `Erreur (${error.code || '400'}) : ${error.message || "Impossible d'enregistrer votre note."}`
       })
     } else {
       setMessage({
@@ -207,13 +236,20 @@ export default function LeagueView({ leagueId, onBack }) {
     ? ratings 
     : ratings.filter((r) => (r.week_number || currentWeek) === Number(selectedWeekFilter))
 
-  // Moyennes globales par critère (basées sur les avis filtrés ou globaux)
+  // Moyennes globales par critère
   const getCriteriaAverages = (items) => {
     if (items.length === 0) return null
     const totals = CRITERIA.reduce((acc, c) => ({ ...acc, [c.id]: 0 }), {})
     items.forEach((r) => {
       CRITERIA.forEach((c) => {
-        totals[c.id] += Number(r[c.id] || r.score || 5)
+        let val = 5
+        if (c.id === 'taste') val = r.taste ?? r.gout ?? r.score ?? 5
+        else if (c.id === 'texture') val = r.texture ?? r.score ?? 5
+        else if (c.id === 'appearance') val = r.appearance ?? r.apparence ?? r.score ?? 5
+        else if (c.id === 'baking') val = r.baking ?? r.cuisson ?? r.score ?? 5
+        else if (c.id === 'indulgence') val = r.indulgence ?? r.gourmandise ?? r.originalite ?? r.score ?? 5
+
+        totals[c.id] += Number(val)
       })
     })
     const averages = {}
@@ -287,23 +323,37 @@ export default function LeagueView({ leagueId, onBack }) {
             </div>
           </div>
 
-          <div className="flex items-center gap-3 self-start md:self-auto">
-            <div className="bg-amber-100/60 p-3 rounded-xl border border-amber-200 text-center">
-              <div className="text-xs text-amber-800 font-semibold uppercase">Semaine Courante</div>
-              <div className="text-xl font-black text-amber-950">#{currentWeek}</div>
+          <div className="flex flex-wrap items-center gap-3 self-start md:self-auto">
+            {/* Encadré Pâtissier de la semaine (Mis à jour automatiquement chaque lundi) */}
+            <div className="bg-amber-100/80 p-3 rounded-xl border border-amber-200 flex items-center gap-3">
+              <span className="text-2xl">👨‍🍳</span>
+              <div>
+                <div className="text-[10px] uppercase font-bold text-amber-800">
+                  Fournée Semaine #{currentWeek}
+                </div>
+                <div className="text-sm font-extrabold text-amber-950">
+                  {bakeMaster?.profiles?.username ? (
+                    <span>Chef : <span className="underline">{bakeMaster.profiles.username}</span></span>
+                  ) : (
+                    <span className="italic text-amber-800/70">Non assigné</span>
+                  )}
+                </div>
+              </div>
             </div>
+
+            {/* Note Moyenne Globale */}
             {leagueGlobalAverage && (
-              <div className="bg-amber-800 text-white p-3 rounded-xl text-center min-w-[110px]">
+              <div className="bg-amber-800 text-white p-3 rounded-xl text-center min-w-[100px]">
                 <div className="text-2xl font-black">{leagueGlobalAverage} ★</div>
                 <div className="text-[10px] text-amber-200 font-medium uppercase">
-                  {selectedWeekFilter === 'all' ? 'Moyenne Globale' : `Moyenne S#${selectedWeekFilter}`}
+                  {selectedWeekFilter === 'all' ? 'Moyenne Globale' : `Semaine #${selectedWeekFilter}`}
                 </div>
               </div>
             )}
           </div>
         </header>
 
-        {/* Bannières de confirmation ou d'erreur */}
+        {/* Bannières de message */}
         {message && (
           <div
             className={`p-4 rounded-xl text-sm font-medium transition ${
@@ -404,7 +454,6 @@ export default function LeagueView({ leagueId, onBack }) {
                 <span>💬</span> Historique & Notes
               </h2>
 
-              {/* Filtre par semaine */}
               <div className="flex items-center gap-2">
                 <span className="text-xs font-semibold text-amber-900">Filtrer :</span>
                 <select
@@ -422,7 +471,7 @@ export default function LeagueView({ leagueId, onBack }) {
               </div>
             </div>
 
-            {/* Moyennes Détaillées par Critère pour la sélection */}
+            {/* Moyennes Détaillées par Critère */}
             {criteriaAverages && (
               <div className="bg-amber-50/60 p-4 rounded-xl border border-amber-200/60 space-y-2">
                 <div className="text-xs font-bold text-amber-950 uppercase tracking-wide">
@@ -447,73 +496,76 @@ export default function LeagueView({ leagueId, onBack }) {
               </div>
             ) : (
               <div className="space-y-4">
-                {filteredRatings.map((item) => (
-                  <div
-                    key={item.id}
-                    className={`p-4 rounded-xl border transition space-y-3 ${
-                      item.user_id === user?.id
-                        ? 'bg-amber-50/80 border-amber-300'
-                        : 'bg-white border-amber-100'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between border-b border-amber-100/80 pb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="font-extrabold text-sm text-amber-950">
-                          {item.profiles?.username || 'Membre anonyme'}
-                        </span>
-                        {item.user_id === user?.id && (
-                          <span className="text-[10px] bg-amber-200 text-amber-900 font-extrabold px-1.5 py-0.5 rounded">
-                            Vous
+                {filteredRatings.map((item) => {
+                  const isOwner = user && (item.user_id === user.id || item.voter_id === user.id)
+                  return (
+                    <div
+                      key={item.id}
+                      className={`p-4 rounded-xl border transition space-y-3 ${
+                        isOwner
+                          ? 'bg-amber-50/80 border-amber-300'
+                          : 'bg-white border-amber-100'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between border-b border-amber-100/80 pb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="font-extrabold text-sm text-amber-950">
+                            {item.profiles?.username || 'Membre anonyme'}
                           </span>
-                        )}
-                        <span className="text-[10px] bg-amber-100 text-amber-800 font-semibold px-1.5 py-0.5 rounded">
-                          Semaine #{item.week_number || currentWeek}
-                        </span>
+                          {isOwner && (
+                            <span className="text-[10px] bg-amber-200 text-amber-900 font-extrabold px-1.5 py-0.5 rounded">
+                              Vous
+                            </span>
+                          )}
+                          <span className="text-[10px] bg-amber-100 text-amber-800 font-semibold px-1.5 py-0.5 rounded">
+                            Semaine #{item.week_number || currentWeek}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1 text-amber-900 font-black text-base bg-amber-100/80 px-2 py-0.5 rounded-lg">
+                          {item.score} <span className="text-amber-500 text-xs">★</span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1 text-amber-900 font-black text-base bg-amber-100/80 px-2 py-0.5 rounded-lg">
-                        {item.score} <span className="text-amber-500 text-xs">★</span>
+
+                      <div className="grid grid-cols-5 gap-1 text-[11px] font-semibold text-center">
+                        <div className="bg-amber-50 p-1.5 rounded border border-amber-100">
+                          <div className="text-[10px] text-amber-700">Goût</div>
+                          <div className="font-bold text-amber-950">{item.taste ?? item.gout ?? item.score}/5</div>
+                        </div>
+                        <div className="bg-amber-50 p-1.5 rounded border border-amber-100">
+                          <div className="text-[10px] text-amber-700">Texture</div>
+                          <div className="font-bold text-amber-950">{item.texture ?? item.score}/5</div>
+                        </div>
+                        <div className="bg-amber-50 p-1.5 rounded border border-amber-100">
+                          <div className="text-[10px] text-amber-700">Apparence</div>
+                          <div className="font-bold text-amber-950">{item.appearance ?? item.apparence ?? item.score}/5</div>
+                        </div>
+                        <div className="bg-amber-50 p-1.5 rounded border border-amber-100">
+                          <div className="text-[10px] text-amber-700">Cuisson</div>
+                          <div className="font-bold text-amber-950">{item.baking ?? item.cuisson ?? item.score}/5</div>
+                        </div>
+                        <div className="bg-amber-50 p-1.5 rounded border border-amber-100">
+                          <div className="text-[10px] text-amber-700">Gourmand.</div>
+                          <div className="font-bold text-amber-950">{item.indulgence ?? item.gourmandise ?? item.originalite ?? item.score}/5</div>
+                        </div>
+                      </div>
+
+                      {item.comment && (
+                        <p className="text-xs text-amber-900/90 bg-white/80 p-2.5 rounded-lg border border-amber-100/80 italic">
+                          "{item.comment}"
+                        </p>
+                      )}
+
+                      <div className="text-[10px] text-amber-700/60 text-right">
+                        {new Date(item.created_at).toLocaleDateString('fr-FR', {
+                          day: 'numeric',
+                          month: 'short',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
                       </div>
                     </div>
-
-                    <div className="grid grid-cols-5 gap-1 text-[11px] font-semibold text-center">
-                      <div className="bg-amber-50 p-1.5 rounded border border-amber-100">
-                        <div className="text-[10px] text-amber-700">Goût</div>
-                        <div className="font-bold text-amber-950">{item.taste || item.score}/5</div>
-                      </div>
-                      <div className="bg-amber-50 p-1.5 rounded border border-amber-100">
-                        <div className="text-[10px] text-amber-700">Texture</div>
-                        <div className="font-bold text-amber-950">{item.texture || item.score}/5</div>
-                      </div>
-                      <div className="bg-amber-50 p-1.5 rounded border border-amber-100">
-                        <div className="text-[10px] text-amber-700">Apparence</div>
-                        <div className="font-bold text-amber-950">{item.appearance || item.score}/5</div>
-                      </div>
-                      <div className="bg-amber-50 p-1.5 rounded border border-amber-100">
-                        <div className="text-[10px] text-amber-700">Cuisson</div>
-                        <div className="font-bold text-amber-950">{item.baking || item.score}/5</div>
-                      </div>
-                      <div className="bg-amber-50 p-1.5 rounded border border-amber-100">
-                        <div className="text-[10px] text-amber-700">Gourmand.</div>
-                        <div className="font-bold text-amber-950">{item.indulgence || item.score}/5</div>
-                      </div>
-                    </div>
-
-                    {item.comment && (
-                      <p className="text-xs text-amber-900/90 bg-white/80 p-2.5 rounded-lg border border-amber-100/80 italic">
-                        "{item.comment}"
-                      </p>
-                    )}
-
-                    <div className="text-[10px] text-amber-700/60 text-right">
-                      {new Date(item.created_at).toLocaleDateString('fr-FR', {
-                        day: 'numeric',
-                        month: 'short',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>
