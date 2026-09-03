@@ -1,261 +1,334 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
+import LeagueView from './LeagueView' // Assurez-vous que le chemin d'importation est correct
 
-export default function Hub({ onSelectLeague }) {
-  const { user, profile, signOut } = useAuth()
+export default function Hub() {
+  const { user, signOut } = useAuth()
   const [leagues, setLeagues] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [selectedLeagueId, setSelectedLeagueId] = useState(null)
+
+  // États pour les modales / formulaires
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showJoinModal, setShowJoinModal] = useState(false)
   const [newLeagueName, setNewLeagueName] = useState('')
   const [joinCode, setJoinCode] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState(null)
 
-  // Récupération de la liste des ligues
-  const fetchLeagues = async () => {
+  // Récupérer uniquement les ligues de l'utilisateur connecté
+  const fetchUserLeagues = async () => {
     if (!user) return
-    const { data, error } = await supabase
-      .from('leagues')
-      .select('*')
-      .order('created_at', { ascending: false })
+    setLoading(true)
 
-    if (error) {
-      console.error('Erreur lors du chargement des ligues :', error)
-    } else {
-      setLeagues(data || [])
+    try {
+      // On récupère les ligues où l'utilisateur est soit le créateur, soit membre
+      // Pour éviter les doublons si l'utilisateur est créateur ET membre, on gère proprement via une requête combinée ou une vue,
+      // mais la méthode la plus simple et robuste avec Supabase est de récupérer les IDs des ligues de l'utilisateur.
+      
+      const { data: memberships, error: memberErr } = await supabase
+        .from('league_members')
+        .select('league_id')
+        .eq('user_id', user.id)
+
+      if (memberErr) throw memberErr
+
+      const leagueIds = memberships ? memberships.map(m => m.league_id) : []
+
+      // On récupère les ligues correspondantes aux IDs ou créées par l'utilisateur
+      const { data: leaguesData, error: leaguesErr } = await supabase
+        .from('leagues')
+        .select('*')
+        .or(`id.in.(${leagueIds.length > 0 ? leagueIds.join(',') : 'null'}),created_by.eq.${user.id}`)
+        .order('created_at', { ascending: false })
+
+      if (leaguesErr) throw leaguesErr
+
+      setLeagues(leaguesData || [])
+    } catch (err) {
+      console.error('Erreur lors du chargement des ligues :', err.message)
+    } finally {
+      setLoading(false)
     }
   }
 
   useEffect(() => {
-    fetchLeagues()
+    fetchUserLeagues()
   }, [user])
 
-  // Création d'une nouvelle ligue
-  const createLeague = async (e) => {
+  // Créer une nouvelle ligue
+  const handleCreateLeague = async (e) => {
     e.preventDefault()
-    if (!newLeagueName.trim()) return
+    if (!newLeagueName.trim() || !user) return
 
-    // Vérification de la présence de l'utilisateur connecté
-    if (!user?.id) {
-      setMessage({ 
-        type: 'error', 
-        text: 'Erreur : Session utilisateur manquante. Veuillez rafraîchir la page ou vous reconnecter.' 
-      })
-      return
-    }
-
-    setLoading(true)
+    setSubmitting(true)
     setMessage(null)
 
-    // Génération d'un code unique à 6 caractères
-    const code = Math.random().toString(36).substring(2, 8).toUpperCase()
+    try {
+      // Générer un code aléatoire à 6 caractères
+      const code = Math.random().toString(36).substring(2, 8).toUpperCase()
 
-    const { data, error } = await supabase
-      .from('leagues')
-      .insert([
-        {
-          name: newLeagueName.trim(),
-          code: code,
-          created_by: user.id
-        }
-      ])
-      .select()
+      // 1. Insérer la ligue
+      const { data: newLeague, error: leagueError } = await supabase
+        .from('leagues')
+        .insert([
+          {
+            name: newLeagueName.trim(),
+            code: code,
+            status: 'recruiting',
+            created_by: user.id
+          }
+        ])
+        .select()
+        .single()
 
-    if (error) {
-      console.error('Erreur Supabase lors de la création de la ligue :', error)
-      setMessage({ 
-        type: 'error', 
-        text: `Erreur (${error.code || '400'}) : ${error.message || 'Impossible de créer la ligue.'}` 
-      })
-    } else {
-      setMessage({ 
-        type: 'success', 
-        text: `Ligue "${newLeagueName.trim()}" créée avec succès ! Code : ${code}` 
-      })
+      if (leagueError) throw leagueError
+
+      // 2. Ajouter automatiquement le créateur dans league_members
+      const { error: memberError } = await supabase
+        .from('league_members')
+        .insert([
+          {
+            league_id: newLeague.id,
+            user_id: user.id
+          }
+        ])
+
+      if (memberError) throw memberError
+
       setNewLeagueName('')
-      fetchLeagues()
-      if (data && data[0]) {
-        onSelectLeague(data[0].id)
-      }
+      setShowCreateModal(false)
+      fetchUserLeagues()
+      
+      // Ouvrir directement la ligue créée
+      setSelectedLeagueId(newLeague.id)
+    } catch (err) {
+      setMessage({ type: 'error', text: `Erreur : ${err.message}` })
+    } finally {
+      setSubmitting(false)
     }
-    setLoading(false)
   }
 
-  // Rejoindre une ligue par code d'accès
-  const joinLeague = async (e) => {
+  // Rejoindre une ligue via un code
+  const handleJoinLeague = async (e) => {
     e.preventDefault()
-    if (!joinCode.trim()) return
+    if (!joinCode.trim() || !user) return
 
-    setLoading(true)
+    setSubmitting(true)
     setMessage(null)
 
-    const cleanCode = joinCode.trim().toUpperCase()
+    try {
+      // 1. Chercher la ligue correspondante au code
+      const { data: targetLeague, error: searchError } = await supabase
+        .from('leagues')
+        .select('*')
+        .eq('code', joinCode.trim().toUpperCase())
+        .maybeSingle()
 
-    // maybeSingle() évite le rejet 406 si aucun résultat n'est trouvé
-    const { data, error } = await supabase
-      .from('leagues')
-      .select('*')
-      .eq('code', cleanCode)
-      .maybeSingle()
+      if (searchError || !targetLeague) {
+        throw new Error("Aucune ligue ne correspond à ce code d'invitation.")
+      }
 
-    if (error || !data) {
-      setMessage({ type: 'error', text: 'Aucune ligue trouvée avec ce code.' })
-    } else {
-      setMessage({ type: 'success', text: `Ligue "${data.name}" rejointe !` })
+      // 2. Vérifier si l'utilisateur est déjà membre
+      const { data: existingMember } = await supabase
+        .from('league_members')
+        .select('*')
+        .eq('league_id', targetLeague.id)
+        .eq('user_id', user.id)
+        .maybeSingle()
+
+      if (!existingMember) {
+        // 3. Ajouter l'utilisateur dans league_members
+        const { error: joinError } = await supabase
+          .from('league_members')
+          .insert([
+            {
+              league_id: targetLeague.id,
+              user_id: user.id
+            }
+          ])
+
+        if (joinError) throw joinError
+      }
+
       setJoinCode('')
-      onSelectLeague(data.id)
+      setShowJoinModal(false)
+      fetchUserLeagues()
+      setSelectedLeagueId(targetLeague.id)
+    } catch (err) {
+      setMessage({ type: 'error', text: err.message })
+    } finally {
+      setSubmitting(false)
     }
-    setLoading(false)
+  }
+
+  // Si une ligue est sélectionnée, on affiche la vue de la ligue
+  if (selectedLeagueId) {
+    return (
+      <LeagueView 
+        leagueId={selectedLeagueId} 
+        onBack={() => {
+          setSelectedLeagueId(null)
+          fetchUserLeagues()
+        }} 
+      />
+    )
   }
 
   return (
-    <div className="min-h-screen bg-amber-50/50 p-4 sm:p-6">
-      <div className="max-w-4xl mx-auto space-y-6">
+    <div className="min-h-screen bg-amber-50/50 p-4 sm:p-8">
+      <div className="max-w-4xl mx-auto space-y-8">
         
-        {/* En-tête profil & déconnexion */}
-        <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl shadow-sm border border-amber-100">
-          <div className="flex items-center gap-3">
-            <span className="text-4xl">🍪</span>
-            <div>
-              <h1 className="text-2xl font-bold text-amber-950">
-                Bonjour, {profile?.username || user?.email?.split('@')[0] || 'Gourmand'} !
-              </h1>
-              <p className="text-amber-800/80 text-sm">
-                Bienvenue sur CookieMaster. Choisissez ou rejoignez une ligue.
-              </p>
-            </div>
+        {/* Header du Hub */}
+        <header className="bg-white p-6 rounded-2xl shadow-sm border border-amber-100 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="space-y-1 text-center sm:text-left">
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-amber-950 flex items-center justify-center sm:justify-start gap-2">
+              <span>🍪</span> Cookie League Hub
+            </h1>
+            <p className="text-xs text-amber-800/80">Gérez vos ligues de pâtisserie et suivez les classements.</p>
           </div>
-          <button
-            onClick={signOut}
-            className="self-start sm:self-auto px-4 py-2 text-sm font-semibold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition cursor-pointer"
+          <button 
+            onClick={signOut} 
+            className="text-xs font-bold text-red-600 hover:text-red-800 bg-red-50 px-4 py-2 rounded-xl transition cursor-pointer"
           >
-            Déconnexion
+            Se déconnecter
           </button>
         </header>
 
-        {/* Bannière de notification */}
+        {/* Message d'alerte global si besoin */}
         {message && (
-          <div
-            className={`p-4 rounded-xl text-sm font-medium transition ${
-              message.type === 'error'
-                ? 'bg-red-50 text-red-700 border border-red-200'
-                : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-            }`}
-          >
+          <div className={`p-4 rounded-xl text-xs font-medium ${message.type === 'error' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-800'}`}>
             {message.text}
           </div>
         )}
 
-        {/* Panneaux d'actions */}
-        <div className="grid md:grid-cols-2 gap-6">
-          
-          {/* Créer une ligue */}
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-100 space-y-4">
-            <div className="flex items-center gap-2">
-              <span className="text-2xl">✨</span>
-              <h2 className="text-lg font-bold text-amber-950">Créer une ligue</h2>
-            </div>
-            <p className="text-xs text-amber-800/70">
-              Organisez un tournoi de dégustation hebdomadaire au bureau.
-            </p>
-            <form onSubmit={createLeague} className="space-y-3">
-              <div>
-                <label className="block text-xs font-semibold uppercase text-amber-900/80 mb-1">
-                  Nom de la ligue
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="ex: Pâtissiers du 3e étage"
-                  value={newLeagueName}
-                  onChange={(e) => setNewLeagueName(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-amber-50/30 border border-amber-200 rounded-xl text-amber-950 placeholder-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-amber-800 hover:bg-amber-900 text-white font-semibold py-2.5 rounded-xl shadow-sm transition disabled:opacity-50 cursor-pointer"
-              >
-                {loading ? 'Création...' : 'Créer la ligue'}
-              </button>
-            </form>
-          </div>
-
-          {/* Rejoindre une ligue */}
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-100 space-y-4">
-            <div className="flex items-center gap-2">
-              <span className="text-2xl">🔑</span>
-              <h2 className="text-lg font-bold text-amber-950">Rejoindre avec un code</h2>
-            </div>
-            <p className="text-xs text-amber-800/70">
-              Entrez le code d'accès à 6 caractères partagé par un collègue.
-            </p>
-            <form onSubmit={joinLeague} className="space-y-3">
-              <div>
-                <label className="block text-xs font-semibold uppercase text-amber-900/80 mb-1">
-                  Code de la ligue
-                </label>
-                <input
-                  type="text"
-                  required
-                  maxLength={6}
-                  placeholder="ex: X7K9AB"
-                  value={joinCode}
-                  onChange={(e) => setJoinCode(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-amber-50/30 border border-amber-200 rounded-xl text-amber-950 uppercase placeholder-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono tracking-wider"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-amber-900/10 hover:bg-amber-900/20 text-amber-950 font-semibold py-2.5 rounded-xl border border-amber-300 transition disabled:opacity-50 cursor-pointer"
-              >
-                {loading ? 'Recherche...' : 'Rejoindre la ligue'}
-              </button>
-            </form>
-          </div>
-
+        {/* Boutons d'action principaux */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <button
+            onClick={() => { setShowCreateModal(true); setMessage(null); }}
+            className="bg-amber-800 hover:bg-amber-900 text-white font-bold p-4 rounded-2xl shadow-sm transition flex items-center justify-center gap-2 cursor-pointer text-sm"
+          >
+            <span>✨</span> Créer une nouvelle ligue
+          </button>
+          <button
+            onClick={() => { setShowJoinModal(true); setMessage(null); }}
+            className="bg-white hover:bg-amber-50 text-amber-950 border border-amber-200 font-bold p-4 rounded-2xl shadow-sm transition flex items-center justify-center gap-2 cursor-pointer text-sm"
+          >
+            <span>🔗</span> Rejoindre avec un code
+          </button>
         </div>
 
-        {/* Liste des ligues */}
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-100 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-amber-950">Vos ligues activement rejointes</h2>
-            <span className="text-xs font-semibold px-2.5 py-1 bg-amber-100 text-amber-900 rounded-full">
-              {leagues.length} ligue{leagues.length > 1 ? 's' : ''}
-            </span>
-          </div>
+        {/* Liste des ligues de l'utilisateur */}
+        <div className="space-y-4">
+          <h2 className="text-lg font-bold text-amber-950 flex items-center gap-2">
+            <span>🏆</span> Mes ligues ({leagues.length})
+          </h2>
 
-          {leagues.length === 0 ? (
-            <div className="text-center py-8 bg-amber-50/40 rounded-xl border border-dashed border-amber-200">
-              <span className="text-3xl block mb-1">🥣</span>
-              <p className="text-sm font-medium text-amber-900">Vous ne faites partie d'aucune ligue.</p>
-              <p className="text-xs text-amber-700/70 mt-0.5">Créez-en une ci-dessus ou rejoignez la ligue de votre équipe.</p>
+          {loading ? (
+            <div className="text-center py-12 text-amber-900 font-medium text-sm">
+              <span className="animate-spin inline-block mr-2">🍪</span> Chargement de vos ligues...
+            </div>
+          ) : leagues.length === 0 ? (
+            <div className="bg-white p-8 rounded-2xl border border-amber-100 text-center space-y-3">
+              <p className="text-sm text-amber-800/80">Vous ne participez à aucune ligue pour l'instant.</p>
+              <p className="text-xs text-amber-700">Créez-en une ou rejoignez un groupe existant pour commencer !</p>
             </div>
           ) : (
-            <div className="grid sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {leagues.map((league) => (
-                <button
+                <div 
                   key={league.id}
-                  onClick={() => onSelectLeague(league.id)}
-                  className="group text-left p-4 rounded-xl border border-amber-100 bg-amber-50/20 hover:bg-amber-100/50 hover:border-amber-300 transition flex items-center justify-between cursor-pointer"
+                  onClick={() => setSelectedLeagueId(league.id)}
+                  className="bg-white p-5 rounded-2xl border border-amber-100 hover:border-amber-300 shadow-sm transition cursor-pointer flex flex-col justify-between space-y-4"
                 >
-                  <div>
-                    <h3 className="font-bold text-amber-950 group-hover:text-amber-900 transition">
-                      {league.name}
-                    </h3>
-                    <p className="text-xs text-amber-700/70 mt-0.5 font-mono">
-                      Code : {league.code}
-                    </p>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${league.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900'}`}>
+                        {league.status === 'active' ? '🟢 Active' : '⏳ En recrutement'}
+                      </span>
+                      <span className="text-xs font-mono text-amber-800 font-bold bg-amber-50 px-2 py-0.5 rounded">
+                        {league.code}
+                      </span>
+                    </div>
+                    <h3 className="text-base font-extrabold text-amber-950 pt-2">{league.name}</h3>
                   </div>
-                  <span className="text-amber-800 text-sm font-semibold group-hover:translate-x-1 transition-transform">
-                    Ouvrir →
-                  </span>
-                </button>
+                  <div className="text-xs font-bold text-amber-800 flex items-center justify-between pt-2 border-t border-amber-50">
+                    <span>Accéder au salon</span>
+                    <span>→</span>
+                  </div>
+                </div>
               ))}
             </div>
           )}
         </div>
+
+        {/* MODALE : Créer une ligue */}
+        {showCreateModal && (
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+            <div className="bg-white max-w-md w-full p-6 rounded-2xl shadow-xl border border-amber-100 space-y-4">
+              <div className="flex justify-between items-center">
+                <h3 className="text-lg font-bold text-amber-950">Créer une ligue</h3>
+                <button onClick={() => setShowCreateModal(false)} className="text-amber-800 hover:text-amber-950 font-bold text-sm cursor-pointer">✕</button>
+              </div>
+              <form onSubmit={handleCreateLeague} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-amber-900 mb-1">Nom de la ligue</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ex: Les mordus du cookie"
+                    value={newLeagueName}
+                    onChange={(e) => setNewLeagueName(e.target.value)}
+                    className="w-full px-3 py-2 bg-amber-50/40 border border-amber-200 rounded-xl text-sm text-amber-950 focus:outline-none"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="w-full bg-amber-800 hover:bg-amber-900 text-white font-bold py-3 rounded-xl transition text-sm cursor-pointer disabled:opacity-50"
+                >
+                  {submitting ? 'Création...' : 'Créer et lancer le salon'}
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* MODALE : Rejoindre une ligue */}
+        {showJoinModal && (
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+            <div className="bg-white max-w-md w-full p-6 rounded-2xl shadow-xl border border-amber-100 space-y-4">
+              <div className="flex justify-between items-center">
+                <h3 className="text-lg font-bold text-amber-950">Rejoindre une ligue</h3>
+                <button onClick={() => setShowJoinModal(false)} className="text-amber-800 hover:text-amber-950 font-bold text-sm cursor-pointer">✕</button>
+              </div>
+              <form onSubmit={handleJoinLeague} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-amber-900 mb-1">Code d'invitation à 6 caractères</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ex: A3F9Z2"
+                    value={joinCode}
+                    onChange={(e) => setJoinCode(e.target.value)}
+                    className="w-full px-3 py-2 bg-amber-50/40 border border-amber-200 rounded-xl text-sm uppercase text-amber-950 focus:outline-none font-mono tracking-wider"
+                  />
+                </div>
+                {message && (
+                  <p className="text-xs text-red-600 font-medium">{message.text}</p>
+                )}
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="w-full bg-amber-800 hover:bg-amber-900 text-white font-bold py-3 rounded-xl transition text-sm cursor-pointer disabled:opacity-50"
+                >
+                  {submitting ? 'Recherche...' : 'Rejoindre la ligue'}
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
 
       </div>
     </div>
