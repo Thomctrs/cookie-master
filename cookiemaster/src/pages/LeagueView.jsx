@@ -93,13 +93,11 @@ export default function LeagueView({ leagueId, onBack }) {
 
     if (!fullSchedErr) {
       setFullSchedule(fullSchedData || [])
-      
-      // Extraction du bakeMaster de la semaine en cours directement depuis le planning chargé
       const currentMaster = fullSchedData?.find(s => s.week_number === currentWeek)
       setBakeMaster(currentMaster || null)
     }
 
-    // 5. Récupération des notes
+    // 4. Récupération des notes
     const { data: ratingsData, error: ratingsErr } = await supabase
       .from('ratings')
       .select(`
@@ -124,6 +122,23 @@ export default function LeagueView({ leagueId, onBack }) {
 
     if (!ratingsErr) {
       setRatings(ratingsData || [])
+      // Si l'utilisateur a déjà noté la semaine sélectionnée, on pré-remplit les champs pour modification facile
+      const existing = ratingsData?.find(
+        r => r.user_id === user?.id && (r.week_number === selectedWeekToRate || (!r.week_number && selectedWeekToRate === currentWeek))
+      )
+      if (existing) {
+        setScores({
+          taste: existing.taste || 0,
+          texture: existing.texture || 0,
+          appearance: existing.appearance || 0,
+          baking: existing.baking || 0,
+          indulgence: existing.indulgence || 0
+        })
+        setComment(existing.comment || '')
+      } else {
+        setScores({ taste: 0, texture: 0, appearance: 0, baking: 0, indulgence: 0 })
+        setComment('')
+      }
     }
 
     setLoading(false)
@@ -154,16 +169,16 @@ export default function LeagueView({ leagueId, onBack }) {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [leagueId, currentWeek, user?.id])
+  }, [leagueId, currentWeek, user?.id, selectedWeekToRate])
 
-  // Lancement de la ligue : Attribution tour à tour de chaque membre sur les semaines consécutives
+  // Lancement de la ligue : Exactement autant de semaines que de membres
   const handleStartLeague = async () => {
     setMessage(null)
     setSubmitting(true)
 
     try {
       if (leagueMembers.length > 0) {
-        // Boucle pour attribuer séquentiellement chaque membre aux semaines qui suivent (ex: 3 membres = semaine N, N+1, N+2)
+        // Boucle limitée strictement au nombre de membres (nombre de semaines = nombre de users)
         const scheduleInserts = leagueMembers.map((member, index) => ({
           league_id: leagueId,
           week_number: currentWeek + index,
@@ -188,7 +203,7 @@ export default function LeagueView({ leagueId, onBack }) {
       if (updateError) throw updateError
 
       await fetchData()
-      setMessage({ type: 'success', text: "La ligue est lancée et le planning est généré ! C'est parti 🍪" })
+      setMessage({ type: 'success', text: "La ligue est lancée et le planning de la saison est généré ! 🍪" })
 
     } catch (err) {
       console.error(err)
@@ -243,7 +258,8 @@ export default function LeagueView({ leagueId, onBack }) {
     if (error) {
       setMessage({ type: 'error', text: `Erreur : ${error.message}` })
     } else {
-      setMessage({ type: 'success', text: `Évaluation de la semaine #${selectedWeekToRate} enregistrée ! 🍪` })
+      // Pas de redirection de page : on reste sur place avec un message de succès pour pouvoir modifier à tout moment
+      setMessage({ type: 'success', text: `Évaluation enregistrée avec succès ! Vous pouvez la modifier ci-dessous si besoin. 🍪` })
       fetchData()
     }
     setSubmitting(false)
@@ -256,11 +272,8 @@ export default function LeagueView({ leagueId, onBack }) {
     setTimeout(() => setCopied(false), 2500)
   }
 
-  // Règle de visibilité : On ne voit les notes et commentaires de la semaine en cours que si on est dans le passé (semaine < currentWeek)
-  // Ou alors on filtre l'historique pour masquer la semaine en cours tant qu'elle n'est pas terminée.
   const filteredRatings = ratings.filter((r) => {
     const rWeek = r.week_number || currentWeek
-    // Si la note concerne la semaine en cours, on la masque (les résultats ne sont publiés qu'à la fin de la semaine)
     if (rWeek === currentWeek) return false
     if (selectedWeekFilter !== 'all' && rWeek !== Number(selectedWeekFilter)) return false
     return true
@@ -319,10 +332,7 @@ export default function LeagueView({ leagueId, onBack }) {
 
           <div className="space-y-2">
             <h2 className="text-sm font-bold text-amber-950 flex items-center justify-between">
-              <span>Membres rejoints en direct</span>
-              <span className="bg-amber-100 text-amber-900 text-xs px-2 py-0.5 rounded-full font-bold">
-                {leagueMembers.length}
-              </span>
+              <span>Membres rejoints ({leagueMembers.length})</span>
             </h2>
             <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
               {leagueMembers.map((member) => (
@@ -348,11 +358,11 @@ export default function LeagueView({ leagueId, onBack }) {
               disabled={submitting}
               className="w-full bg-amber-800 hover:bg-amber-900 text-white font-bold py-3 rounded-xl shadow-sm transition cursor-pointer text-sm disabled:opacity-50"
             >
-              {submitting ? 'Lancement en cours...' : '🚀 Lancer la ligue et générer le planning'}
+              {submitting ? 'Lancement...' : `🚀 Lancer la ligue (${leagueMembers.length} semaines)`}
             </button>
           ) : (
             <div className="text-center p-3 bg-amber-100/50 rounded-xl text-xs font-medium text-amber-900">
-              En attente que l'organisateur lance la ligue... La page se mettra à jour toute seule ! 🍪
+              En attente que l'organisateur lance la ligue... 🍪
             </div>
           )}
         </div>
@@ -407,9 +417,20 @@ export default function LeagueView({ leagueId, onBack }) {
           
           <div className="md:col-span-5 space-y-6">
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-100 space-y-5">
-              <h2 className="text-lg font-bold text-amber-950 flex items-center gap-2">
-                <span>📝</span> Noter une fournée
-              </h2>
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-amber-950 flex items-center gap-2">
+                  <span>📝</span> Noter une fournée
+                </h2>
+                <select
+                  value={selectedWeekToRate}
+                  onChange={(e) => setSelectedWeekToRate(Number(e.target.value))}
+                  className="bg-amber-50 border border-amber-200 rounded-lg text-xs font-bold text-amber-950 px-2 py-1 outline-none"
+                >
+                  {fullSchedule.map(s => (
+                    <option key={s.week_number} value={s.week_number}>Semaine #{s.week_number}</option>
+                  ))}
+                </select>
+              </div>
 
               <form onSubmit={handleSubmitRating} className="space-y-4">
                 {CRITERIA.map((criterion) => (
@@ -451,30 +472,26 @@ export default function LeagueView({ leagueId, onBack }) {
                   disabled={submitting}
                   className="w-full bg-amber-800 hover:bg-amber-900 text-white font-bold py-3 rounded-xl shadow-sm transition cursor-pointer text-sm"
                 >
-                  {submitting ? 'Enregistrement...' : "Valider l'évaluation"}
+                  {submitting ? 'Enregistrement...' : "Enregistrer ou modifier l'évaluation"}
                 </button>
               </form>
             </div>
 
-            {/* Planning complet */}
+            {/* Planning complet (nombre de semaines = nombre de users) */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-100 space-y-3">
               <h3 className="text-base font-bold text-amber-950 flex items-center gap-2">
-                <span>📅</span> Planning complet
+                <span>📅</span> Planning de la saison ({fullSchedule.length} semaines)
               </h3>
               <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                {fullSchedule.length === 0 ? (
-                  <p className="text-xs text-amber-800/70 italic text-center py-2">Aucun planning généré.</p>
-                ) : (
-                  fullSchedule.map((sched) => {
-                    const isCurrent = sched.week_number === currentWeek
-                    return (
-                      <div key={sched.id} className={`px-3 py-2 rounded-xl border text-xs flex items-center justify-between font-semibold ${isCurrent ? 'bg-amber-100 border-amber-300 text-amber-950 font-extrabold' : 'bg-amber-50/40 border-amber-100 text-amber-900'}`}>
-                        <span>Semaine #{sched.week_number} {isCurrent && '(Actuelle)'}</span>
-                        <span>{sched.profiles?.username || 'Non assigné'}</span>
-                      </div>
-                    )
-                  })
-                )}
+                {fullSchedule.map((sched) => {
+                  const isCurrent = sched.week_number === currentWeek
+                  return (
+                    <div key={sched.id} className={`px-3 py-2 rounded-xl border text-xs flex items-center justify-between font-semibold ${isCurrent ? 'bg-amber-100 border-amber-300 text-amber-950 font-extrabold' : 'bg-amber-50/40 border-amber-100 text-amber-900'}`}>
+                      <span>Semaine #{sched.week_number} {isCurrent && '(Actuelle)'}</span>
+                      <span>{sched.profiles?.username || 'Non assigné'}</span>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           </div>
