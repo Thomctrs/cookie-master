@@ -5,6 +5,7 @@ import Auth from './pages/Auth'
 import Hub from './pages/Hub'
 import LeagueView from './pages/LeagueView'
 import ProfileView from './pages/ProfileView'
+import { Analytics } from "@vercel/analytics/next"
 
 export default function App() {
   const { user } = useAuth()
