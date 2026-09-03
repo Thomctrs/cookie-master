@@ -49,82 +49,90 @@ export default function LeagueView({ leagueId, onBack }) {
     if (!leagueId) return
 
     // 1. Informations sur la ligue
-    const { data: leagueData, error: leagueErr } = await supabase
+    const { data: leagueData } = await supabase
       .from('leagues')
       .select('*')
       .eq('id', leagueId)
       .maybeSingle()
 
-    if (!leagueErr && leagueData) {
-      setLeague(leagueData)
-    }
+    if (leagueData) setLeague(leagueData)
 
-    // 2. Récupération des membres de la ligue avec leurs profils
-    const { data: membersData, error: membersErr } = await supabase
+    // 2. Récupération robuste des membres et de leurs profils
+    const { data: membersData } = await supabase
       .from('league_members')
-      .select(`
-        user_id,
-        profiles:user_id (
-          id,
-          username
-        )
-      `)
+      .select('user_id')
       .eq('league_id', leagueId)
 
-    if (!membersErr) {
-      setLeagueMembers(membersData || [])
-    }
+    let enrichedMembers = []
+    if (membersData && membersData.length > 0) {
+      const userIds = membersData.map(m => m.user_id)
+      const { data: profilesData } = await supabase
+        .from('profiles')
+        .select('id, username')
+        .in('id', userIds)
 
-    // 3. Récupération du planning complet de l'année
-    const { data: fullSchedData, error: fullSchedErr } = await supabase
+      enrichedMembers = membersData.map(m => {
+        const profile = profilesData?.find(p => p.id === m.user_id)
+        return {
+          user_id: m.user_id,
+          profiles: profile || { username: 'Membre' }
+        }
+      })
+    }
+    setLeagueMembers(enrichedMembers)
+
+    // 3. Récupération du planning
+    const { data: fullSchedData } = await supabase
       .from('league_schedule')
-      .select(`
-        id,
-        week_number,
-        year,
-        assigned_user_id,
-        profiles:assigned_user_id (
-          username
-        )
-      `)
+      .select('*')
       .eq('league_id', leagueId)
       .eq('year', currentYear)
       .order('week_number', { ascending: true })
 
-    if (!fullSchedErr) {
-      setFullSchedule(fullSchedData || [])
-      const currentMaster = fullSchedData?.find(s => s.week_number === currentWeek)
+    if (fullSchedData && fullSchedData.length > 0) {
+      const userIds = fullSchedData.map(s => s.assigned_user_id)
+      const { data: profilesData } = await supabase
+        .from('profiles')
+        .select('id, username')
+        .in('id', userIds)
+
+      const enrichedSchedule = fullSchedData.map(s => ({
+        ...s,
+        profiles: profilesData?.find(p => p.id === s.assigned_user_id) || { username: 'Membre' }
+      }))
+
+      setFullSchedule(enrichedSchedule)
+      const currentMaster = enrichedSchedule.find(s => s.week_number === currentWeek)
       setBakeMaster(currentMaster || null)
+    } else {
+      setFullSchedule([])
+      setBakeMaster(null)
     }
 
     // 4. Récupération des notes
-    const { data: ratingsData, error: ratingsErr } = await supabase
+    const { data: ratingsData } = await supabase
       .from('ratings')
-      .select(`
-        id,
-        score,
-        taste,
-        texture,
-        appearance,
-        baking,
-        indulgence,
-        comment,
-        created_at,
-        user_id,
-        voter_id,
-        week_number,
-        profiles:user_id (
-          username
-        )
-      `)
+      .select('*')
       .eq('league_id', leagueId)
       .order('created_at', { ascending: false })
 
-    if (!ratingsErr) {
-      setRatings(ratingsData || [])
-      // Si l'utilisateur a déjà noté la semaine sélectionnée, on pré-remplit les champs pour modification facile
-      const existing = ratingsData?.find(
-        r => r.user_id === user?.id && (r.week_number === selectedWeekToRate || (!r.week_number && selectedWeekToRate === currentWeek))
+    if (ratingsData && ratingsData.length > 0) {
+      const userIds = ratingsData.map(r => r.user_id || r.voter_id)
+      const { data: profilesData } = await supabase
+        .from('profiles')
+        .select('id, username')
+        .in('id', userIds)
+
+      const enrichedRatings = ratingsData.map(r => ({
+        ...r,
+        profiles: profilesData?.find(p => p.id === (r.user_id || r.voter_id)) || { username: 'Membre' }
+      }))
+
+      setRatings(enrichedRatings)
+
+      const existing = enrichedRatings.find(
+        r => (r.user_id === user?.id || r.voter_id === user?.id) && 
+             (r.week_number === selectedWeekToRate || (!r.week_number && selectedWeekToRate === currentWeek))
       )
       if (existing) {
         setScores({
@@ -139,6 +147,8 @@ export default function LeagueView({ leagueId, onBack }) {
         setScores({ taste: 0, texture: 0, appearance: 0, baking: 0, indulgence: 0 })
         setComment('')
       }
+    } else {
+      setRatings([])
     }
 
     setLoading(false)
@@ -149,21 +159,9 @@ export default function LeagueView({ leagueId, onBack }) {
 
     const channel = supabase
       .channel(`room-${leagueId}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'leagues', filter: `id=eq.${leagueId}` },
-        () => { fetchData() }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'league_members', filter: `league_id=eq.${leagueId}` },
-        () => { fetchData() }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'league_schedule', filter: `league_id=eq.${leagueId}` },
-        () => { fetchData() }
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leagues', filter: `id=eq.${leagueId}` }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'league_members', filter: `league_id=eq.${leagueId}` }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'league_schedule', filter: `league_id=eq.${leagueId}` }, () => fetchData())
       .subscribe()
 
     return () => {
@@ -171,14 +169,13 @@ export default function LeagueView({ leagueId, onBack }) {
     }
   }, [leagueId, currentWeek, user?.id, selectedWeekToRate])
 
-  // Lancement de la ligue : Exactement autant de semaines que de membres
+  // Génération du planning : Nombre de semaines = Nombre exact de membres
   const handleStartLeague = async () => {
     setMessage(null)
     setSubmitting(true)
 
     try {
       if (leagueMembers.length > 0) {
-        // Boucle limitée strictement au nombre de membres (nombre de semaines = nombre de users)
         const scheduleInserts = leagueMembers.map((member, index) => ({
           league_id: leagueId,
           week_number: currentWeek + index,
@@ -190,9 +187,7 @@ export default function LeagueView({ leagueId, onBack }) {
           .from('league_schedule')
           .insert(scheduleInserts)
 
-        if (schedError) {
-          console.warn("Attention planning potentiellement déjà existant :", schedError.message)
-        }
+        if (schedError) throw schedError
       }
 
       const { error: updateError } = await supabase
@@ -203,7 +198,7 @@ export default function LeagueView({ leagueId, onBack }) {
       if (updateError) throw updateError
 
       await fetchData()
-      setMessage({ type: 'success', text: "La ligue est lancée et le planning de la saison est généré ! 🍪" })
+      setMessage({ type: 'success', text: `La ligue est lancée ! Planning généré pour ${leagueMembers.length} semaines. 🍪` })
 
     } catch (err) {
       console.error(err)
@@ -258,8 +253,7 @@ export default function LeagueView({ leagueId, onBack }) {
     if (error) {
       setMessage({ type: 'error', text: `Erreur : ${error.message}` })
     } else {
-      // Pas de redirection de page : on reste sur place avec un message de succès pour pouvoir modifier à tout moment
-      setMessage({ type: 'success', text: `Évaluation enregistrée avec succès ! Vous pouvez la modifier ci-dessous si besoin. 🍪` })
+      setMessage({ type: 'success', text: "Évaluation enregistrée ! Vous pouvez la modifier à tout moment ci-dessous. 🍪" })
       fetchData()
     }
     setSubmitting(false)
@@ -477,21 +471,25 @@ export default function LeagueView({ leagueId, onBack }) {
               </form>
             </div>
 
-            {/* Planning complet (nombre de semaines = nombre de users) */}
+            {/* Planning complet (exactement nb users semaines) */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-100 space-y-3">
               <h3 className="text-base font-bold text-amber-950 flex items-center gap-2">
                 <span>📅</span> Planning de la saison ({fullSchedule.length} semaines)
               </h3>
               <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                {fullSchedule.map((sched) => {
-                  const isCurrent = sched.week_number === currentWeek
-                  return (
-                    <div key={sched.id} className={`px-3 py-2 rounded-xl border text-xs flex items-center justify-between font-semibold ${isCurrent ? 'bg-amber-100 border-amber-300 text-amber-950 font-extrabold' : 'bg-amber-50/40 border-amber-100 text-amber-900'}`}>
-                      <span>Semaine #{sched.week_number} {isCurrent && '(Actuelle)'}</span>
-                      <span>{sched.profiles?.username || 'Non assigné'}</span>
-                    </div>
-                  )
-                })}
+                {fullSchedule.length === 0 ? (
+                  <p className="text-xs text-amber-800/70 italic text-center py-2">Aucun planning généré.</p>
+                ) : (
+                  fullSchedule.map((sched) => {
+                    const isCurrent = sched.week_number === currentWeek
+                    return (
+                      <div key={sched.id} className={`px-3 py-2 rounded-xl border text-xs flex items-center justify-between font-semibold ${isCurrent ? 'bg-amber-100 border-amber-300 text-amber-950 font-extrabold' : 'bg-amber-50/40 border-amber-100 text-amber-900'}`}>
+                        <span>Semaine #{sched.week_number} {isCurrent && '(Actuelle)'}</span>
+                        <span>{sched.profiles?.username || 'Membre'}</span>
+                      </div>
+                    )
+                  })
+                )}
               </div>
             </div>
           </div>
