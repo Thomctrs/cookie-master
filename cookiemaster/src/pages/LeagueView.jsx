@@ -14,6 +14,14 @@ export default function LeagueView({ leagueId, onBack }) {
   const { user } = useAuth()
   const [league, setLeague] = useState(null)
   const [ratings, setRatings] = useState([])
+  
+  // États pour la saisie de note
+  const currentWeek = getWeekNumber(new Date())
+  const [selectedWeekToRate, setSelectedWeekToRate] = useState(currentWeek)
+  
+  // Filtre pour l'historique ('all' ou un numéro de semaine spécifique)
+  const [selectedWeekFilter, setSelectedWeekFilter] = useState('all')
+
   const [scores, setScores] = useState({
     taste: 5,
     texture: 5,
@@ -26,8 +34,6 @@ export default function LeagueView({ leagueId, onBack }) {
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState(null)
   const [copied, setCopied] = useState(false)
-
-  const currentWeek = getWeekNumber(new Date())
 
   // Fonction utilitaire pour le numéro de semaine ISO
   function getWeekNumber(d) {
@@ -83,10 +89,10 @@ export default function LeagueView({ leagueId, onBack }) {
     } else {
       setRatings(ratingsData || [])
 
-      // Si l'utilisateur a déjà noté cette semaine, préremplir le formulaire
+      // Pré-remplir si l'utilisateur a déjà noté pour la semaine sélectionnée
       if (user) {
         const existing = (ratingsData || []).find(
-          (r) => r.user_id === user.id && (r.week_number === currentWeek || !r.week_number)
+          (r) => r.user_id === user.id && (r.week_number === selectedWeekToRate || (!r.week_number && selectedWeekToRate === currentWeek))
         )
         if (existing) {
           setScores({
@@ -97,6 +103,9 @@ export default function LeagueView({ leagueId, onBack }) {
             indulgence: existing.indulgence || 5
           })
           setComment(existing.comment || '')
+        } else {
+          setScores({ taste: 5, texture: 5, appearance: 5, baking: 5, indulgence: 5 })
+          setComment('')
         }
       }
     }
@@ -106,7 +115,7 @@ export default function LeagueView({ leagueId, onBack }) {
 
   useEffect(() => {
     fetchData()
-  }, [leagueId, user])
+  }, [leagueId, user, selectedWeekToRate])
 
   // Calcul du score moyen global d'un avis
   const calculateAverage = (s) => {
@@ -115,7 +124,7 @@ export default function LeagueView({ leagueId, onBack }) {
   }
 
   // Soumission de l'évaluation
- const handleSubmitRating = async (e) => {
+  const handleSubmitRating = async (e) => {
     e.preventDefault()
     if (!user?.id || !leagueId) {
       setMessage({ type: 'error', text: 'Session ou ligue invalide.' })
@@ -127,31 +136,28 @@ export default function LeagueView({ leagueId, onBack }) {
 
     const globalScore = Number(calculateAverage(scores))
     const existingRating = ratings.find(
-      (r) => (r.user_id === user.id || r.voter_id === user.id) && r.week_number === currentWeek
+      (r) => (r.user_id === user.id || r.voter_id === user.id) && (r.week_number === selectedWeekToRate || (!r.week_number && selectedWeekToRate === currentWeek))
     )
 
-    // Déclaration du payload avant toute utilisation
     const payload = {
-  league_id: leagueId,
-  user_id: user.id,
-  voter_id: user.id,
-  score: globalScore,
-  // Critères (anglais)
-  taste: Number(scores.taste),
-  texture: Number(scores.texture),
-  appearance: Number(scores.appearance),
-  baking: Number(scores.baking),
-  indulgence: Number(scores.indulgence),
-  originality: Number(scores.indulgence), // <-- Ajouté ici
-  // Critères (français)
-  gout: Number(scores.taste),
-  apparence: Number(scores.appearance),
-  cuisson: Number(scores.baking),
-  gourmandise: Number(scores.indulgence),
-  originalite: Number(scores.indulgence), // <-- Ajouté ici
-  comment: comment.trim() || null,
-  week_number: currentWeek
-}
+      league_id: leagueId,
+      user_id: user.id,
+      voter_id: user.id,
+      score: globalScore,
+      taste: Number(scores.taste),
+      texture: Number(scores.texture),
+      appearance: Number(scores.appearance),
+      baking: Number(scores.baking),
+      indulgence: Number(scores.indulgence),
+      originality: Number(scores.indulgence),
+      gout: Number(scores.taste),
+      apparence: Number(scores.appearance),
+      cuisson: Number(scores.baking),
+      gourmandise: Number(scores.indulgence),
+      originalite: Number(scores.indulgence),
+      comment: comment.trim() || null,
+      week_number: Number(selectedWeekToRate)
+    }
 
     let error = null
 
@@ -165,6 +171,7 @@ export default function LeagueView({ leagueId, onBack }) {
       const res = await supabase
         .from('ratings')
         .insert([payload])
+        .select()
       error = res.error
     }
 
@@ -177,7 +184,7 @@ export default function LeagueView({ leagueId, onBack }) {
     } else {
       setMessage({
         type: 'success',
-        text: 'Évaluation de la semaine enregistrée avec succès ! 🍪'
+        text: `Évaluation de la semaine #${selectedWeekToRate} enregistrée avec succès ! 🍪`
       })
       fetchData()
     }
@@ -191,27 +198,36 @@ export default function LeagueView({ leagueId, onBack }) {
     setTimeout(() => setCopied(false), 2500)
   }
 
-  // Moyennes globales par critère
-  const getCriteriaAverages = () => {
-    if (ratings.length === 0) return null
+  // Liste des semaines disponibles pour le filtre
+  const availableWeeks = [...new Set(ratings.map((r) => r.week_number || currentWeek))].sort((a, b) => b - a)
+  if (!availableWeeks.includes(currentWeek)) availableWeeks.unshift(currentWeek)
+
+  // Filtrer les ratings affichés dans l'historique
+  const filteredRatings = selectedWeekFilter === 'all' 
+    ? ratings 
+    : ratings.filter((r) => (r.week_number || currentWeek) === Number(selectedWeekFilter))
+
+  // Moyennes globales par critère (basées sur les avis filtrés ou globaux)
+  const getCriteriaAverages = (items) => {
+    if (items.length === 0) return null
     const totals = CRITERIA.reduce((acc, c) => ({ ...acc, [c.id]: 0 }), {})
-    ratings.forEach((r) => {
+    items.forEach((r) => {
       CRITERIA.forEach((c) => {
         totals[c.id] += Number(r[c.id] || r.score || 5)
       })
     })
     const averages = {}
     CRITERIA.forEach((c) => {
-      averages[c.id] = (totals[c.id] / ratings.length).toFixed(1)
+      averages[c.id] = (totals[c.id] / items.length).toFixed(1)
     })
     return averages
   }
 
-  const criteriaAverages = getCriteriaAverages()
+  const criteriaAverages = getCriteriaAverages(filteredRatings)
 
   const leagueGlobalAverage =
-    ratings.length > 0
-      ? (ratings.reduce((acc, r) => acc + Number(r.score || 5), 0) / ratings.length).toFixed(1)
+    filteredRatings.length > 0
+      ? (filteredRatings.reduce((acc, r) => acc + Number(r.score || 5), 0) / filteredRatings.length).toFixed(1)
       : null
 
   if (loading) {
@@ -271,28 +287,21 @@ export default function LeagueView({ leagueId, onBack }) {
             </div>
           </div>
 
-          {/* Badge de la semaine & Moyenne globale */}
           <div className="flex items-center gap-3 self-start md:self-auto">
             <div className="bg-amber-100/60 p-3 rounded-xl border border-amber-200 text-center">
-              <div className="text-xs text-amber-800 font-semibold uppercase">Semaine</div>
+              <div className="text-xs text-amber-800 font-semibold uppercase">Semaine Courante</div>
               <div className="text-xl font-black text-amber-950">#{currentWeek}</div>
             </div>
             {leagueGlobalAverage && (
               <div className="bg-amber-800 text-white p-3 rounded-xl text-center min-w-[110px]">
                 <div className="text-2xl font-black">{leagueGlobalAverage} ★</div>
-                <div className="text-[10px] text-amber-200 font-medium uppercase">Moyenne Globale</div>
+                <div className="text-[10px] text-amber-200 font-medium uppercase">
+                  {selectedWeekFilter === 'all' ? 'Moyenne Globale' : `Moyenne S#${selectedWeekFilter}`}
+                </div>
               </div>
             )}
           </div>
         </header>
-
-        {/* Rappel du système hebdomadaire & Notification par mail */}
-        <div className="bg-amber-100/50 border border-amber-200/80 p-4 rounded-xl flex items-start gap-3 text-amber-950 text-xs sm:text-sm">
-          <span className="text-2xl">📧</span>
-          <div className="space-y-0.5">
-            <strong className="font-bold">Rappel des fournées :</strong> Chaque <strong>vendredi soir</strong>, un e-mail est automatiquement envoyé pour désigner le membre en charge des cookies de la semaine suivante.
-          </div>
-        </div>
 
         {/* Bannières de confirmation ou d'erreur */}
         {message && (
@@ -307,40 +316,33 @@ export default function LeagueView({ leagueId, onBack }) {
           </div>
         )}
 
-        {/* Moyennes Détaillées par Critère */}
-        {criteriaAverages && (
-          <section className="bg-white p-5 rounded-2xl border border-amber-100 shadow-sm space-y-3">
-            <h2 className="text-sm font-bold text-amber-950 uppercase tracking-wide">
-              📊 Score moyen de la ligue par critère
-            </h2>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-              {CRITERIA.map((c) => (
-                <div key={c.id} className="bg-amber-50/60 p-3 rounded-xl border border-amber-200/60 text-center space-y-1">
-                  <div className="text-xl">{c.icon}</div>
-                  <div className="text-xs font-semibold text-amber-900 truncate">{c.label}</div>
-                  <div className="text-lg font-black text-amber-950">{criteriaAverages[c.id]} / 5</div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
         <div className="grid md:grid-cols-12 gap-6">
           
-          {/* Formulaire de Notation Multi-Critères (5/12) */}
+          {/* Formulaire de Notation (5/12) */}
           <div className="md:col-span-5 bg-white p-6 rounded-2xl shadow-sm border border-amber-100 space-y-5 h-fit">
-            <div>
+            <div className="space-y-2">
               <h2 className="text-lg font-bold text-amber-950 flex items-center gap-2">
-                <span>📝</span> Évaluer la fournée N°{currentWeek}
+                <span>📝</span> Noter une fournée
               </h2>
-              <p className="text-xs text-amber-800/70 mt-0.5">
-                Attribuez une note de 1 à 5 pour chaque critère.
-              </p>
+              <div>
+                <label className="block text-xs font-semibold text-amber-900 mb-1">
+                  Semaine concernée :
+                </label>
+                <select
+                  value={selectedWeekToRate}
+                  onChange={(e) => setSelectedWeekToRate(Number(e.target.value))}
+                  className="w-full px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl text-amber-950 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-amber-500"
+                >
+                  {[currentWeek, currentWeek - 1, currentWeek - 2, currentWeek - 3].map((w) => (
+                    <option key={w} value={w}>
+                      Semaine #{w} {w === currentWeek ? '(Actuelle)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <form onSubmit={handleSubmitRating} className="space-y-4">
-              
-              {/* Les 5 critères avec étoiles */}
               {CRITERIA.map((criterion) => (
                 <div key={criterion.id} className="space-y-1.5 bg-amber-50/40 p-3 rounded-xl border border-amber-100">
                   <div className="flex items-center justify-between text-xs font-bold text-amber-950">
@@ -367,13 +369,11 @@ export default function LeagueView({ leagueId, onBack }) {
                 </div>
               ))}
 
-              {/* Aperçu de la note finale calculée */}
               <div className="bg-amber-100/60 p-3 rounded-xl text-center flex items-center justify-between px-4 border border-amber-200">
                 <span className="text-xs font-bold text-amber-900">Note Globale calculée :</span>
                 <span className="text-xl font-black text-amber-950">{calculateAverage(scores)} / 5</span>
               </div>
 
-              {/* Commentaire */}
               <div>
                 <label className="block text-xs font-semibold uppercase text-amber-900/80 mb-1">
                   Commentaires & Remarques
@@ -392,33 +392,62 @@ export default function LeagueView({ leagueId, onBack }) {
                 disabled={submitting}
                 className="w-full bg-amber-800 hover:bg-amber-900 text-white font-bold py-3 rounded-xl shadow-sm transition disabled:opacity-50 cursor-pointer text-sm"
               >
-                {submitting ? 'Enregistrement...' : 'Valider mon évaluation hebdomadaire'}
+                {submitting ? 'Enregistrement...' : `Valider l'évaluation (Semaine #${selectedWeekToRate})`}
               </button>
             </form>
           </div>
 
-          {/* Liste des avis et notes détaillées (7/12) */}
+          {/* Liste des avis avec Filtre par Semaine (7/12) */}
           <div className="md:col-span-7 bg-white p-6 rounded-2xl shadow-sm border border-amber-100 space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <h2 className="text-lg font-bold text-amber-950 flex items-center gap-2">
-                <span>💬</span> Historique des évaluations
+                <span>💬</span> Historique & Notes
               </h2>
-              <span className="text-xs font-semibold px-2.5 py-1 bg-amber-100 text-amber-900 rounded-full">
-                {ratings.length} avis
-              </span>
+
+              {/* Filtre par semaine */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-amber-900">Filtrer :</span>
+                <select
+                  value={selectedWeekFilter}
+                  onChange={(e) => setSelectedWeekFilter(e.target.value)}
+                  className="px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-xl text-xs font-bold text-amber-950 focus:outline-none"
+                >
+                  <option value="all">Toutes les semaines ({ratings.length})</option>
+                  {availableWeeks.map((w) => (
+                    <option key={w} value={w}>
+                      Semaine #{w}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
-            {ratings.length === 0 ? (
+            {/* Moyennes Détaillées par Critère pour la sélection */}
+            {criteriaAverages && (
+              <div className="bg-amber-50/60 p-4 rounded-xl border border-amber-200/60 space-y-2">
+                <div className="text-xs font-bold text-amber-950 uppercase tracking-wide">
+                  📊 Moyennes {selectedWeekFilter === 'all' ? 'globales' : `de la semaine #${selectedWeekFilter}`}
+                </div>
+                <div className="grid grid-cols-5 gap-2">
+                  {CRITERIA.map((c) => (
+                    <div key={c.id} className="bg-white p-2 rounded-lg border border-amber-100 text-center">
+                      <div className="text-sm">{c.icon}</div>
+                      <div className="text-[10px] font-semibold text-amber-900 truncate">{c.label}</div>
+                      <div className="text-xs font-black text-amber-950">{criteriaAverages[c.id]}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {filteredRatings.length === 0 ? (
               <div className="text-center py-12 bg-amber-50/30 rounded-xl border border-dashed border-amber-200 space-y-2">
                 <span className="text-4xl block">🍪</span>
-                <p className="text-sm font-semibold text-amber-900">Aucune évaluation enregistrée pour l'instant.</p>
-                <p className="text-xs text-amber-700/70">
-                  Attribuez vos notes pour lancer la compétition de la ligue !
-                </p>
+                <p className="text-sm font-semibold text-amber-900">Aucune évaluation pour cette sélection.</p>
               </div>
             ) : (
               <div className="space-y-4">
-                {ratings.map((item) => (
+                {filteredRatings.map((item) => (
                   <div
                     key={item.id}
                     className={`p-4 rounded-xl border transition space-y-3 ${
@@ -427,7 +456,6 @@ export default function LeagueView({ leagueId, onBack }) {
                         : 'bg-white border-amber-100'
                     }`}
                   >
-                    {/* Header de l'avis */}
                     <div className="flex items-center justify-between border-b border-amber-100/80 pb-2">
                       <div className="flex items-center gap-2">
                         <span className="font-extrabold text-sm text-amber-950">
@@ -438,18 +466,15 @@ export default function LeagueView({ leagueId, onBack }) {
                             Vous
                           </span>
                         )}
-                        {item.week_number && (
-                          <span className="text-[10px] bg-amber-100 text-amber-800 font-semibold px-1.5 py-0.5 rounded">
-                            Semaine #{item.week_number}
-                          </span>
-                        )}
+                        <span className="text-[10px] bg-amber-100 text-amber-800 font-semibold px-1.5 py-0.5 rounded">
+                          Semaine #{item.week_number || currentWeek}
+                        </span>
                       </div>
                       <div className="flex items-center gap-1 text-amber-900 font-black text-base bg-amber-100/80 px-2 py-0.5 rounded-lg">
                         {item.score} <span className="text-amber-500 text-xs">★</span>
                       </div>
                     </div>
 
-                    {/* Badge des 5 critères */}
                     <div className="grid grid-cols-5 gap-1 text-[11px] font-semibold text-center">
                       <div className="bg-amber-50 p-1.5 rounded border border-amber-100">
                         <div className="text-[10px] text-amber-700">Goût</div>
@@ -473,7 +498,6 @@ export default function LeagueView({ leagueId, onBack }) {
                       </div>
                     </div>
 
-                    {/* Commentaire optionnel */}
                     {item.comment && (
                       <p className="text-xs text-amber-900/90 bg-white/80 p-2.5 rounded-lg border border-amber-100/80 italic">
                         "{item.comment}"
