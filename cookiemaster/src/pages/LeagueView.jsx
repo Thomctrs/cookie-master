@@ -15,7 +15,6 @@ export default function LeagueView({ leagueId, onBack }) {
   const [league, setLeague] = useState(null)
   const [ratings, setRatings] = useState([])
   
-  // États pour la semaine, le planning et les membres du lobby
   const currentWeek = getWeekNumber(new Date())
   const currentYear = new Date().getFullYear()
   
@@ -38,7 +37,6 @@ export default function LeagueView({ leagueId, onBack }) {
   const [message, setMessage] = useState(null)
   const [copied, setCopied] = useState(false)
 
-  // Fonction utilitaire pour le numéro de semaine ISO
   function getWeekNumber(d) {
     const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
     const dayNum = date.getUTCDay() || 7
@@ -47,10 +45,8 @@ export default function LeagueView({ leagueId, onBack }) {
     return Math.ceil(((date - yearStart) / 86400000 + 1) / 7)
   }
 
-  // Chargement des données de la ligue, des notes, du planning et des membres
   const fetchData = async () => {
     if (!leagueId) return
-    setLoading(true)
 
     // 1. Informations sur la ligue
     const { data: leagueData, error: leagueErr } = await supabase
@@ -59,13 +55,11 @@ export default function LeagueView({ leagueId, onBack }) {
       .eq('id', leagueId)
       .maybeSingle()
 
-    if (leagueErr) {
-      console.error('Erreur ligue :', leagueErr)
-    } else {
+    if (!leagueErr) {
       setLeague(leagueData)
     }
 
-    // 2. Récupération des membres de la ligue (pour le lobby et l'affichage)
+    // 2. Récupération des membres de la ligue
     const { data: membersData, error: membersErr } = await supabase
       .from('league_members')
       .select(`
@@ -101,7 +95,7 @@ export default function LeagueView({ leagueId, onBack }) {
       setBakeMaster(scheduleData)
     }
 
-    // 4. Récupération du planning complet de la ligue trié par semaine
+    // 4. Récupération du planning complet
     const { data: fullSchedData, error: fullSchedErr } = await supabase
       .from('league_schedule')
       .select(`
@@ -120,7 +114,7 @@ export default function LeagueView({ leagueId, onBack }) {
       setFullSchedule(fullSchedData || [])
     }
 
-    // 5. Récupération des notes de la ligue
+    // 5. Récupération des notes
     const { data: ratingsData, error: ratingsErr } = await supabase
       .from('ratings')
       .select(`
@@ -146,38 +140,58 @@ export default function LeagueView({ leagueId, onBack }) {
     if (!ratingsErr) {
       const formattedRatings = ratingsData || []
       setRatings(formattedRatings)
-
-      if (user) {
-        const existing = formattedRatings.find(
-          (r) => 
-            (r.user_id === user.id || r.voter_id === user.id) && 
-            (r.week_number === selectedWeekToRate || (!r.week_number && selectedWeekToRate === currentWeek))
-        )
-        if (existing) {
-          setScores({
-            taste: existing.taste || existing.gout || 5,
-            texture: existing.texture || 5,
-            appearance: existing.appearance || existing.apparence || 5,
-            baking: existing.baking || existing.cuisson || 5,
-            indulgence: existing.indulgence || existing.gourmandise || 5
-          })
-          setComment(existing.comment || '')
-        } else {
-          setScores({ taste: 5, texture: 5, appearance: 5, baking: 5, indulgence: 5 })
-          setComment('')
-        }
-      }
     }
 
     setLoading(false)
   }
 
+  // Chargement initial + Mise en place des abonnements Realtime
   useEffect(() => {
     fetchData()
-  }, [leagueId, user, selectedWeekToRate])
 
-  // Lancer la partie (Créateur uniquement)
+    // Écoute en temps réel des modifications sur cette ligue et ses membres
+    const channel = supabase
+      .channel(`room-${leagueId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'leagues', filter: `id=eq.${leagueId}` },
+        () => { fetchData() }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'league_members', filter: `league_id=eq.${leagueId}` },
+        () => { fetchData() }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'league_schedule', filter: `league_id=eq.${leagueId}` },
+        () => { fetchData() }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [leagueId, currentWeek])
+
+  // Lancer la partie (Créateur uniquement) + Génération automatique du planning
   const handleStartLeague = async () => {
+    // 1. Générer le planning de roulement des membres si pas encore fait
+    if (leagueMembers.length > 0) {
+      const scheduleInserts = leagueMembers.map((member, index) => {
+        // Assigner une semaine par membre à partir de la semaine courante
+        return {
+          league_id: leagueId,
+          week_number: currentWeek + index,
+          year: currentYear,
+          assigned_user_id: member.user_id
+        }
+      })
+
+      await supabase.from('league_schedule').insert(scheduleInserts)
+    }
+
+    // 2. Changer le statut de la ligue à 'active'
     const { error } = await supabase
       .from('leagues')
       .update({ status: 'active' })
@@ -186,8 +200,7 @@ export default function LeagueView({ leagueId, onBack }) {
     if (error) {
       setMessage({ type: 'error', text: "Erreur lors du lancement de la ligue." })
     } else {
-      setMessage({ type: 'success', text: "La ligue est lancée ! Que la compétition commence 🍪" })
-      fetchData()
+      setMessage({ type: 'success', text: "La ligue est lancée ! 🍪" })
     }
   }
 
@@ -198,10 +211,7 @@ export default function LeagueView({ leagueId, onBack }) {
 
   const handleSubmitRating = async (e) => {
     e.preventDefault()
-    if (!user?.id || !leagueId) {
-      setMessage({ type: 'error', text: 'Session ou ligue invalide.' })
-      return
-    }
+    if (!user?.id || !leagueId) return
 
     setSubmitting(true)
     setMessage(null)
@@ -223,12 +233,6 @@ export default function LeagueView({ leagueId, onBack }) {
       appearance: Number(scores.appearance),
       baking: Number(scores.baking),
       indulgence: Number(scores.indulgence),
-      originality: Number(scores.indulgence),
-      gout: Number(scores.taste),
-      apparence: Number(scores.appearance),
-      cuisson: Number(scores.baking),
-      gourmandise: Number(scores.indulgence),
-      originalite: Number(scores.indulgence),
       comment: comment.trim() || null,
       week_number: Number(selectedWeekToRate)
     }
@@ -238,7 +242,7 @@ export default function LeagueView({ leagueId, onBack }) {
       const res = await supabase.from('ratings').update(payload).eq('id', existingRating.id)
       error = res.error
     } else {
-      const res = await supabase.from('ratings').insert([payload]).select()
+      const res = await supabase.from('ratings').insert([payload])
       error = res.error
     }
 
@@ -270,12 +274,7 @@ export default function LeagueView({ leagueId, onBack }) {
     const totals = CRITERIA.reduce((acc, c) => ({ ...acc, [c.id]: 0 }), {})
     items.forEach((r) => {
       CRITERIA.forEach((c) => {
-        let val = 5
-        if (c.id === 'taste') val = r.taste ?? r.gout ?? r.score ?? 5
-        else if (c.id === 'texture') val = r.texture ?? r.score ?? 5
-        else if (c.id === 'appearance') val = r.appearance ?? r.apparence ?? r.score ?? 5
-        else if (c.id === 'baking') val = r.baking ?? r.cuisson ?? r.score ?? 5
-        else if (c.id === 'indulgence') val = r.indulgence ?? r.gourmandise ?? r.originalite ?? r.score ?? 5
+        let val = r[c.id] ?? r.score ?? 5
         totals[c.id] += Number(val)
       })
     })
@@ -293,7 +292,7 @@ export default function LeagueView({ leagueId, onBack }) {
     return (
       <div className="min-h-screen bg-amber-50/50 flex items-center justify-center p-4">
         <div className="text-amber-900 font-semibold flex items-center gap-2">
-          <span className="animate-spin text-2xl">🍪</span> Chargement de la ligue...
+          <span className="animate-spin text-2xl">🍪</span> Chargement...
         </div>
       </div>
     )
@@ -302,8 +301,8 @@ export default function LeagueView({ leagueId, onBack }) {
   if (!league) {
     return (
       <div className="min-h-screen bg-amber-50/50 p-6 flex flex-col items-center justify-center text-center">
-        <p className="text-red-600 font-semibold mb-4">Ligue introuvable ou indisponible.</p>
-        <button onClick={onBack} className="px-4 py-2 bg-amber-800 text-white rounded-xl font-semibold hover:bg-amber-900 transition cursor-pointer">
+        <p className="text-red-600 font-semibold mb-4">Ligue introuvable ou accès non autorisé.</p>
+        <button onClick={onBack} className="px-4 py-2 bg-amber-800 text-white rounded-xl font-semibold cursor-pointer">
           ← Retour au Hub
         </button>
       </div>
@@ -311,7 +310,7 @@ export default function LeagueView({ leagueId, onBack }) {
   }
 
   // ==========================================
-  // ÉCRAN 1 : LOBBY DE RECRUTEMENT
+  // LOBBY DE RECRUTEMENT
   // ==========================================
   if (league.status === 'recruiting') {
     const isCreator = user && league.created_by === user.id
@@ -335,13 +334,13 @@ export default function LeagueView({ leagueId, onBack }) {
               {league.code}
             </div>
             <button onClick={handleCopyCode} className="text-xs font-bold text-amber-800 underline hover:text-amber-950 cursor-pointer">
-              {copied ? 'Code copié dans le presse-papier !' : 'Copier le code'}
+              {copied ? 'Code copié !' : 'Copier le code'}
             </button>
           </div>
 
           <div className="space-y-2">
             <h2 className="text-sm font-bold text-amber-950 flex items-center justify-between">
-              <span>Membres rejoints</span>
+              <span>Membres rejoints en direct</span>
               <span className="bg-amber-100 text-amber-900 text-xs px-2 py-0.5 rounded-full font-bold">
                 {leagueMembers.length}
               </span>
@@ -373,7 +372,7 @@ export default function LeagueView({ leagueId, onBack }) {
             </button>
           ) : (
             <div className="text-center p-3 bg-amber-100/50 rounded-xl text-xs font-medium text-amber-900">
-              En attente que l'organisateur lance la ligue pour commencer les hostilités !
+              En attente que l'organisateur lance la ligue... La page se mettra à jour toute seule ! 🍪
             </div>
           )}
         </div>
@@ -382,13 +381,12 @@ export default function LeagueView({ leagueId, onBack }) {
   }
 
   // ==========================================
-  // ÉCRAN 2 : VUE PRINCIPALE (LIGUE ACTIVE)
+  // VUE PRINCIPALE (LIGUE ACTIVE)
   // ==========================================
   return (
     <div className="min-h-screen bg-amber-50/50 p-4 sm:p-6">
       <div className="max-w-5xl mx-auto space-y-6">
         
-        {/* En-tête de la Ligue */}
         <header className="bg-white p-6 rounded-2xl shadow-sm border border-amber-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="space-y-1">
             <button onClick={onBack} className="text-xs font-bold text-amber-800 hover:text-amber-950 transition flex items-center gap-1 mb-2 cursor-pointer">
@@ -397,34 +395,21 @@ export default function LeagueView({ leagueId, onBack }) {
             <h1 className="text-2xl sm:text-3xl font-extrabold text-amber-950 flex items-center gap-2">
               <span>🏆</span> {league.name}
             </h1>
-            <div className="flex items-center gap-3 text-xs text-amber-800/80 pt-1">
-              <span>Code : <strong className="font-mono bg-amber-100 text-amber-900 px-2 py-0.5 rounded">{league.code}</strong></span>
-              <button onClick={handleCopyCode} className="text-amber-700 hover:text-amber-900 underline cursor-pointer">
-                {copied ? 'Copié !' : 'Copier'}
-              </button>
-            </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 self-start md:self-auto">
-            {/* Note Moyenne Globale */}
-            {leagueGlobalAverage && (
-              <div className="bg-amber-800 text-white p-3 rounded-xl text-center min-w-[100px]">
-                <div className="text-2xl font-black">{leagueGlobalAverage} ★</div>
-                <div className="text-[10px] text-amber-200 font-medium uppercase">
-                  {selectedWeekFilter === 'all' ? 'Moyenne Globale' : `Semaine #${selectedWeekFilter}`}
-                </div>
-              </div>
-            )}
-          </div>
+          {leagueGlobalAverage && (
+            <div className="bg-amber-800 text-white p-3 rounded-xl text-center min-w-[100px]">
+              <div className="text-2xl font-black">{leagueGlobalAverage} ★</div>
+              <div className="text-[10px] text-amber-200 font-medium uppercase">Moyenne Globale</div>
+            </div>
+          )}
         </header>
 
-        {/* Encadré Pâtissier de la semaine demandé */}
+        {/* Pâtissier de la semaine */}
         <div className="bg-gradient-to-r from-amber-100 to-amber-200/60 p-4 rounded-2xl border border-amber-300 shadow-sm flex items-center gap-4">
           <span className="text-3xl sm:text-4xl">👨‍🍳</span>
           <div className="space-y-0.5">
-            <div className="text-[10px] uppercase font-bold tracking-wider text-amber-800">
-              Fournée en cours
-            </div>
+            <div className="text-[10px] uppercase font-bold tracking-wider text-amber-800">Fournée en cours</div>
             <div className="text-sm sm:text-base font-extrabold text-amber-950">
               Cette semaine (#{currentWeek}), c'est{' '}
               <span className="underline decoration-amber-600 decoration-2">
@@ -436,45 +421,24 @@ export default function LeagueView({ leagueId, onBack }) {
         </div>
 
         {message && (
-          <div className={`p-4 rounded-xl text-sm font-medium ${message.type === 'error' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'}`}>
+          <div className={`p-4 rounded-xl text-sm font-medium ${message.type === 'error' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-800'}`}>
             {message.text}
           </div>
         )}
 
         <div className="grid md:grid-cols-12 gap-6">
           
-          {/* Colonne Gauche : Formulaire de Notation (5/12) + Planning Complet en bas */}
           <div className="md:col-span-5 space-y-6">
-            
-            {/* Formulaire de Notation */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-100 space-y-5">
-              <div className="space-y-2">
-                <h2 className="text-lg font-bold text-amber-950 flex items-center gap-2">
-                  <span>📝</span> Noter une fournée
-                </h2>
-                <div>
-                  <label className="block text-xs font-semibold text-amber-900 mb-1">Semaine concernée :</label>
-                  <select
-                    value={selectedWeekToRate}
-                    onChange={(e) => setSelectedWeekToRate(Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl text-amber-950 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-amber-500"
-                  >
-                    {[currentWeek, currentWeek - 1, currentWeek - 2, currentWeek - 3].map((w) => (
-                      <option key={w} value={w}>
-                        Semaine #{w} {w === currentWeek ? '(Actuelle)' : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+              <h2 className="text-lg font-bold text-amber-950 flex items-center gap-2">
+                <span>📝</span> Noter une fournée
+              </h2>
 
               <form onSubmit={handleSubmitRating} className="space-y-4">
                 {CRITERIA.map((criterion) => (
                   <div key={criterion.id} className="space-y-1.5 bg-amber-50/40 p-3 rounded-xl border border-amber-100">
                     <div className="flex items-center justify-between text-xs font-bold text-amber-950">
-                      <span className="flex items-center gap-1.5">
-                        <span>{criterion.icon}</span> {criterion.label}
-                      </span>
+                      <span>{criterion.icon} {criterion.label}</span>
                       <span className="text-amber-800 font-mono">{scores[criterion.id]} / 5</span>
                     </div>
                     <div className="flex items-center justify-between pt-1">
@@ -493,167 +457,69 @@ export default function LeagueView({ leagueId, onBack }) {
                 ))}
 
                 <div className="bg-amber-100/60 p-3 rounded-xl text-center flex items-center justify-between px-4 border border-amber-200">
-                  <span className="text-xs font-bold text-amber-900">Note Globale calculée :</span>
+                  <span className="text-xs font-bold text-amber-900">Note Globale :</span>
                   <span className="text-xl font-black text-amber-950">{calculateAverage(scores)} / 5</span>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold uppercase text-amber-900/80 mb-1">Commentaires & Remarques</label>
-                  <textarea
-                    rows={3}
-                    placeholder="Générosité, pépites fondantes, croustillant..."
-                    value={comment}
-                    onChange={(e) => setComment(e.target.value)}
-                    className="w-full px-3 py-2 bg-amber-50/30 border border-amber-200 rounded-xl text-amber-950 placeholder-amber-400 text-sm focus:outline-none"
-                  />
-                </div>
+                <textarea
+                  rows={3}
+                  placeholder="Commentaires..."
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  className="w-full px-3 py-2 bg-amber-50/30 border border-amber-200 rounded-xl text-amber-950 text-sm focus:outline-none"
+                />
 
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="w-full bg-amber-800 hover:bg-amber-900 text-white font-bold py-3 rounded-xl shadow-sm transition disabled:opacity-50 cursor-pointer text-sm"
+                  className="w-full bg-amber-800 hover:bg-amber-900 text-white font-bold py-3 rounded-xl shadow-sm transition cursor-pointer text-sm"
                 >
-                  {submitting ? 'Enregistrement...' : `Valider l'évaluation (Semaine #${selectedWeekToRate})`}
+                  {submitting ? 'Enregistrement...' : "Valider l'évaluation"}
                 </button>
               </form>
             </div>
 
-            {/* Tableau du planning complet demandé */}
+            {/* Planning complet */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-100 space-y-3">
               <h3 className="text-base font-bold text-amber-950 flex items-center gap-2">
-                <span>📅</span> Planning complet de la ligue
+                <span>📅</span> Planning complet
               </h3>
-              {fullSchedule.length === 0 ? (
-                <p className="text-xs text-amber-800/70 italic">Aucun planning enregistré pour le moment.</p>
-              ) : (
-                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                  {fullSchedule.map((sched) => {
-                    const isCurrent = sched.week_number === currentWeek
-                    return (
-                      <div
-                        key={sched.id}
-                        className={`px-3 py-2 rounded-xl border text-xs flex items-center justify-between font-semibold ${
-                          isCurrent
-                            ? 'bg-amber-100/90 border-amber-300 text-amber-950 font-extrabold'
-                            : 'bg-amber-50/40 border-amber-100 text-amber-900'
-                        }`}
-                      >
-                        <span className="flex items-center gap-1.5">
-                          <span>Semaine #{sched.week_number}</span>
-                          {isCurrent && <span className="text-[9px] bg-amber-900 text-white px-1.5 py-0.5 rounded">En cours</span>}
-                        </span>
-                        <span>{sched.profiles?.username || 'Non assigné'}</span>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-
-          </div>
-
-          {/* Colonne Droite : Historique des notes et avis (7/12) */}
-          <div className="md:col-span-7 bg-white p-6 rounded-2xl shadow-sm border border-amber-100 space-y-4 h-fit">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <h2 className="text-lg font-bold text-amber-950 flex items-center gap-2">
-                <span>💬</span> Historique & Notes
-              </h2>
-
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-amber-900">Filtrer :</span>
-                <select
-                  value={selectedWeekFilter}
-                  onChange={(e) => setSelectedWeekFilter(e.target.value)}
-                  className="px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-xl text-xs font-bold text-amber-950 focus:outline-none"
-                >
-                  <option value="all">Toutes les semaines ({ratings.length})</option>
-                  {availableWeeks.map((w) => (
-                    <option key={w} value={w}>Semaine #{w}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {criteriaAverages && (
-              <div className="bg-amber-50/60 p-4 rounded-xl border border-amber-200/60 space-y-2">
-                <div className="text-xs font-bold text-amber-950 uppercase tracking-wide">
-                  📊 Moyennes {selectedWeekFilter === 'all' ? 'globales' : `de la semaine #${selectedWeekFilter}`}
-                </div>
-                <div className="grid grid-cols-5 gap-2">
-                  {CRITERIA.map((c) => (
-                    <div key={c.id} className="bg-white p-2 rounded-lg border border-amber-100 text-center">
-                      <div className="text-sm">{c.icon}</div>
-                      <div className="text-[10px] font-semibold text-amber-900 truncate">{c.label}</div>
-                      <div className="text-xs font-black text-amber-950">{criteriaAverages[c.id]}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {filteredRatings.length === 0 ? (
-              <div className="text-center py-12 bg-amber-50/30 rounded-xl border border-dashed border-amber-200 space-y-2">
-                <span className="text-4xl block">🍪</span>
-                <p className="text-sm font-semibold text-amber-900">Aucune évaluation pour cette sélection.</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {filteredRatings.map((item) => {
-                  const isOwner = user && (item.user_id === user.id || item.voter_id === user.id)
+              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                {fullSchedule.map((sched) => {
+                  const isCurrent = sched.week_number === currentWeek
                   return (
-                    <div key={item.id} className={`p-4 rounded-xl border transition space-y-3 ${isOwner ? 'bg-amber-50/80 border-amber-300' : 'bg-white border-amber-100'}`}>
-                      <div className="flex items-center justify-between border-b border-amber-100/80 pb-2">
-                        <div className="flex items-center gap-2">
-                          <span className="font-extrabold text-sm text-amber-950">{item.profiles?.username || 'Membre anonyme'}</span>
-                          {isOwner && <span className="text-[10px] bg-amber-200 text-amber-900 font-extrabold px-1.5 py-0.5 rounded">Vous</span>}
-                          <span className="text-[10px] bg-amber-100 text-amber-800 font-semibold px-1.5 py-0.5 rounded">Semaine #{item.week_number || currentWeek}</span>
-                        </div>
-                        <div className="flex items-center gap-1 text-amber-900 font-black text-base bg-amber-100/80 px-2 py-0.5 rounded-lg">
-                          {item.score} <span className="text-amber-500 text-xs">★</span>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-5 gap-1 text-[11px] font-semibold text-center">
-                        <div className="bg-amber-50 p-1.5 rounded border border-amber-100">
-                          <div className="text-[10px] text-amber-700">Goût</div>
-                          <div className="font-bold text-amber-950">{item.taste ?? item.gout ?? item.score}/5</div>
-                        </div>
-                        <div className="bg-amber-50 p-1.5 rounded border border-amber-100">
-                          <div className="text-[10px] text-amber-700">Texture</div>
-                          <div className="font-bold text-amber-950">{item.texture ?? item.score}/5</div>
-                        </div>
-                        <div className="bg-amber-50 p-1.5 rounded border border-amber-100">
-                          <div className="text-[10px] text-amber-700">Apparence</div>
-                          <div className="font-bold text-amber-950">{item.appearance ?? item.apparence ?? item.score}/5</div>
-                        </div>
-                        <div className="bg-amber-50 p-1.5 rounded border border-amber-100">
-                          <div className="text-[10px] text-amber-700">Cuisson</div>
-                          <div className="font-bold text-amber-950">{item.baking ?? item.cuisson ?? item.score}/5</div>
-                        </div>
-                        <div className="bg-amber-50 p-1.5 rounded border border-amber-100">
-                          <div className="text-[10px] text-amber-700">Gourmand.</div>
-                          <div className="font-bold text-amber-950">{item.indulgence ?? item.gourmandise ?? item.originalite ?? item.score}/5</div>
-                        </div>
-                      </div>
-
-                      {item.comment && (
-                        <p className="text-xs text-amber-900/90 bg-white/80 p-2.5 rounded-lg border border-amber-100/80 italic">
-                          "{item.comment}"
-                        </p>
-                      )}
-
-                      <div className="text-[10px] text-amber-700/60 text-right">
-                        {new Date(item.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                      </div>
+                    <div key={sched.id} className={`px-3 py-2 rounded-xl border text-xs flex items-center justify-between font-semibold ${isCurrent ? 'bg-amber-100 border-amber-300 text-amber-950 font-extrabold' : 'bg-amber-50/40 border-amber-100 text-amber-900'}`}>
+                      <span>Semaine #{sched.week_number} {isCurrent && '(Actuelle)'}</span>
+                      <span>{sched.profiles?.username || 'Non assigné'}</span>
                     </div>
                   )
                 })}
+              </div>
+            </div>
+          </div>
+
+          <div className="md:col-span-7 bg-white p-6 rounded-2xl shadow-sm border border-amber-100 space-y-4 h-fit">
+            <h2 className="text-lg font-bold text-amber-950 flex items-center gap-2">
+              <span>💬</span> Historique des avis
+            </h2>
+            {filteredRatings.length === 0 ? (
+              <p className="text-xs text-amber-800/70 italic py-6 text-center">Aucune évaluation pour le moment.</p>
+            ) : (
+              <div className="space-y-4">
+                {filteredRatings.map((item) => (
+                  <div key={item.id} className="p-4 rounded-xl border border-amber-100 bg-white space-y-2">
+                    <div className="flex justify-between items-center text-xs font-bold text-amber-950">
+                      <span>{item.profiles?.username} (Semaine #{item.week_number || currentWeek})</span>
+                      <span className="bg-amber-100 px-2 py-0.5 rounded">{item.score} ★</span>
+                    </div>
+                    {item.comment && <p className="text-xs text-amber-900 italic">"{item.comment}"</p>}
+                  </div>
+                ))}
               </div>
             )}
           </div>
 
         </div>
-
       </div>
     </div>
   )
