@@ -24,7 +24,6 @@ export default function LeagueView({ leagueId, onBack }) {
   const [fullSchedule, setFullSchedule] = useState([])
   const [leagueMembers, setLeagueMembers] = useState([])
 
-  // CORRECTION : Initialisation des scores à 0 au lieu de 5
   const [scores, setScores] = useState({
     taste: 0,
     texture: 0,
@@ -60,12 +59,12 @@ export default function LeagueView({ leagueId, onBack }) {
       setLeague(leagueData)
     }
 
-    // 2. Récupération des membres de la ligue
+    // 2. Récupération des membres de la ligue avec leurs profils
     const { data: membersData, error: membersErr } = await supabase
       .from('league_members')
       .select(`
         user_id,
-        profiles (
+        profiles:user_id (
           id,
           username
         )
@@ -76,52 +75,15 @@ export default function LeagueView({ leagueId, onBack }) {
       setLeagueMembers(membersData || [])
     }
 
-    // 3. Récupération du Pâtissier de la semaine en cours (avec jointure explicite)
-    const { data: scheduleData, error: scheduleErr } = await supabase
-      .from('league_schedule')
-      .select(`
-        week_number,
-        year,
-        assigned_user_id,
-        profiles:profiles!league_schedule_assigned_user_id_fkey (
-          username
-        )
-      `)
-      .eq('league_id', leagueId)
-      .eq('week_number', currentWeek)
-      .eq('year', currentYear)
-      .maybeSingle()
-
-    // Fallback de sécurité si la jointure nommée diffère selon votre schéma
-    if (!scheduleErr && scheduleData) {
-      setBakeMaster(scheduleData)
-    } else {
-      // Deuxième tentative sans nom de contrainte explicite si nécessaire
-      const { data: schedFallback } = await supabase
-        .from('league_schedule')
-        .select(`
-          week_number,
-          year,
-          assigned_user_id,
-          profiles (
-            username
-          )
-        `)
-        .eq('league_id', leagueId)
-        .eq('week_number', currentWeek)
-        .eq('year', currentYear)
-        .maybeSingle()
-      setBakeMaster(schedFallback)
-    }
-
-    // 4. Récupération du planning complet
+    // 3. Récupération du planning complet de l'année
     const { data: fullSchedData, error: fullSchedErr } = await supabase
       .from('league_schedule')
       .select(`
         id,
         week_number,
         year,
-        profiles (
+        assigned_user_id,
+        profiles:assigned_user_id (
           username
         )
       `)
@@ -131,6 +93,10 @@ export default function LeagueView({ leagueId, onBack }) {
 
     if (!fullSchedErr) {
       setFullSchedule(fullSchedData || [])
+      
+      // Extraction du bakeMaster de la semaine en cours directement depuis le planning chargé
+      const currentMaster = fullSchedData?.find(s => s.week_number === currentWeek)
+      setBakeMaster(currentMaster || null)
     }
 
     // 5. Récupération des notes
@@ -149,7 +115,7 @@ export default function LeagueView({ leagueId, onBack }) {
         user_id,
         voter_id,
         week_number,
-        profiles (
+        profiles:user_id (
           username
         )
       `)
@@ -163,7 +129,6 @@ export default function LeagueView({ leagueId, onBack }) {
     setLoading(false)
   }
 
-  // Chargement initial + Abonnements Realtime + Rafraîchissement sur changement d'utilisateur
   useEffect(() => {
     fetchData()
 
@@ -189,14 +154,16 @@ export default function LeagueView({ leagueId, onBack }) {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [leagueId, currentWeek, user?.id]) // Dépendance sur user?.id pour forcer le rafraîchissement à la connexion/déconnexion
+  }, [leagueId, currentWeek, user?.id])
 
+  // Lancement de la ligue : Attribution tour à tour de chaque membre sur les semaines consécutives
   const handleStartLeague = async () => {
     setMessage(null)
     setSubmitting(true)
 
     try {
       if (leagueMembers.length > 0) {
+        // Boucle pour attribuer séquentiellement chaque membre aux semaines qui suivent (ex: 3 membres = semaine N, N+1, N+2)
         const scheduleInserts = leagueMembers.map((member, index) => ({
           league_id: leagueId,
           week_number: currentWeek + index,
@@ -209,7 +176,7 @@ export default function LeagueView({ leagueId, onBack }) {
           .insert(scheduleInserts)
 
         if (schedError) {
-          console.warn("Planning potentiellement déjà existant :", schedError.message)
+          console.warn("Attention planning potentiellement déjà existant :", schedError.message)
         }
       }
 
@@ -221,7 +188,7 @@ export default function LeagueView({ leagueId, onBack }) {
       if (updateError) throw updateError
 
       await fetchData()
-      setMessage({ type: 'success', text: "La ligue est lancée ! C'est parti 🍪" })
+      setMessage({ type: 'success', text: "La ligue est lancée et le planning est généré ! C'est parti 🍪" })
 
     } catch (err) {
       console.error(err)
@@ -289,9 +256,15 @@ export default function LeagueView({ leagueId, onBack }) {
     setTimeout(() => setCopied(false), 2500)
   }
 
-  const filteredRatings = selectedWeekFilter === 'all' 
-    ? ratings 
-    : ratings.filter((r) => (r.week_number || currentWeek) === Number(selectedWeekFilter))
+  // Règle de visibilité : On ne voit les notes et commentaires de la semaine en cours que si on est dans le passé (semaine < currentWeek)
+  // Ou alors on filtre l'historique pour masquer la semaine en cours tant qu'elle n'est pas terminée.
+  const filteredRatings = ratings.filter((r) => {
+    const rWeek = r.week_number || currentWeek
+    // Si la note concerne la semaine en cours, on la masque (les résultats ne sont publiés qu'à la fin de la semaine)
+    if (rWeek === currentWeek) return false
+    if (selectedWeekFilter !== 'all' && rWeek !== Number(selectedWeekFilter)) return false
+    return true
+  })
 
   const leagueGlobalAverage = filteredRatings.length > 0
     ? (filteredRatings.reduce((acc, r) => acc + Number(r.score || 0), 0) / filteredRatings.length).toFixed(1)
@@ -417,7 +390,7 @@ export default function LeagueView({ leagueId, onBack }) {
             <div className="text-sm sm:text-base font-extrabold text-amber-950">
               Cette semaine (#{currentWeek}), c'est{' '}
               <span className="underline decoration-amber-600 decoration-2">
-                {bakeMaster?.profiles?.username || bakeMaster?.profiles?.[0]?.username || 'un membre'}
+                {bakeMaster?.profiles?.username || 'un membre'}
               </span>{' '}
               qui régale avec ses cookies ! 🍪
             </div>
@@ -489,25 +462,29 @@ export default function LeagueView({ leagueId, onBack }) {
                 <span>📅</span> Planning complet
               </h3>
               <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                {fullSchedule.map((sched) => {
-                  const isCurrent = sched.week_number === currentWeek
-                  return (
-                    <div key={sched.id} className={`px-3 py-2 rounded-xl border text-xs flex items-center justify-between font-semibold ${isCurrent ? 'bg-amber-100 border-amber-300 text-amber-950 font-extrabold' : 'bg-amber-50/40 border-amber-100 text-amber-900'}`}>
-                      <span>Semaine #{sched.week_number} {isCurrent && '(Actuelle)'}</span>
-                      <span>{sched.profiles?.username || sched.profiles?.[0]?.username || 'Non assigné'}</span>
-                    </div>
-                  )
-                })}
+                {fullSchedule.length === 0 ? (
+                  <p className="text-xs text-amber-800/70 italic text-center py-2">Aucun planning généré.</p>
+                ) : (
+                  fullSchedule.map((sched) => {
+                    const isCurrent = sched.week_number === currentWeek
+                    return (
+                      <div key={sched.id} className={`px-3 py-2 rounded-xl border text-xs flex items-center justify-between font-semibold ${isCurrent ? 'bg-amber-100 border-amber-300 text-amber-950 font-extrabold' : 'bg-amber-50/40 border-amber-100 text-amber-900'}`}>
+                        <span>Semaine #{sched.week_number} {isCurrent && '(Actuelle)'}</span>
+                        <span>{sched.profiles?.username || 'Non assigné'}</span>
+                      </div>
+                    )
+                  })
+                )}
               </div>
             </div>
           </div>
 
           <div className="md:col-span-7 bg-white p-6 rounded-2xl shadow-sm border border-amber-100 space-y-4 h-fit">
             <h2 className="text-lg font-bold text-amber-950 flex items-center gap-2">
-              <span>💬</span> Historique des avis
+              <span>💬</span> Historique des avis (publié après la semaine)
             </h2>
             {filteredRatings.length === 0 ? (
-              <p className="text-xs text-amber-800/70 italic py-6 text-center">Aucune évaluation pour le moment.</p>
+              <p className="text-xs text-amber-800/70 italic py-6 text-center">Aucun avis publié pour le moment (les notes de la semaine en cours sont masquées jusqu'à dimanche minuit).</p>
             ) : (
               <div className="space-y-4">
                 {filteredRatings.map((item) => (
