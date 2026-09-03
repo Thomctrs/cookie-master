@@ -24,12 +24,13 @@ export default function LeagueView({ leagueId, onBack }) {
   const [fullSchedule, setFullSchedule] = useState([])
   const [leagueMembers, setLeagueMembers] = useState([])
 
+  // CORRECTION : Initialisation des scores à 0 au lieu de 5
   const [scores, setScores] = useState({
-    taste: 5,
-    texture: 5,
-    appearance: 5,
-    baking: 5,
-    indulgence: 5
+    taste: 0,
+    texture: 0,
+    appearance: 0,
+    baking: 0,
+    indulgence: 0
   })
   const [comment, setComment] = useState('')
   const [loading, setLoading] = useState(true)
@@ -75,14 +76,14 @@ export default function LeagueView({ leagueId, onBack }) {
       setLeagueMembers(membersData || [])
     }
 
-    // 3. Récupération du Pâtissier de la semaine en cours
+    // 3. Récupération du Pâtissier de la semaine en cours (avec jointure explicite)
     const { data: scheduleData, error: scheduleErr } = await supabase
       .from('league_schedule')
       .select(`
         week_number,
         year,
         assigned_user_id,
-        profiles:assigned_user_id (
+        profiles:profiles!league_schedule_assigned_user_id_fkey (
           username
         )
       `)
@@ -91,8 +92,26 @@ export default function LeagueView({ leagueId, onBack }) {
       .eq('year', currentYear)
       .maybeSingle()
 
-    if (!scheduleErr) {
+    // Fallback de sécurité si la jointure nommée diffère selon votre schéma
+    if (!scheduleErr && scheduleData) {
       setBakeMaster(scheduleData)
+    } else {
+      // Deuxième tentative sans nom de contrainte explicite si nécessaire
+      const { data: schedFallback } = await supabase
+        .from('league_schedule')
+        .select(`
+          week_number,
+          year,
+          assigned_user_id,
+          profiles (
+            username
+          )
+        `)
+        .eq('league_id', leagueId)
+        .eq('week_number', currentWeek)
+        .eq('year', currentYear)
+        .maybeSingle()
+      setBakeMaster(schedFallback)
     }
 
     // 4. Récupération du planning complet
@@ -102,7 +121,7 @@ export default function LeagueView({ leagueId, onBack }) {
         id,
         week_number,
         year,
-        profiles:assigned_user_id (
+        profiles (
           username
         )
       `)
@@ -144,7 +163,7 @@ export default function LeagueView({ leagueId, onBack }) {
     setLoading(false)
   }
 
-  // Chargement initial + Abonnements Realtime
+  // Chargement initial + Abonnements Realtime + Rafraîchissement sur changement d'utilisateur
   useEffect(() => {
     fetchData()
 
@@ -170,15 +189,13 @@ export default function LeagueView({ leagueId, onBack }) {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [leagueId, currentWeek])
+  }, [leagueId, currentWeek, user?.id]) // Dépendance sur user?.id pour forcer le rafraîchissement à la connexion/déconnexion
 
-  // Lancement de la ligue (Génération du planning + Passage en 'active')
   const handleStartLeague = async () => {
     setMessage(null)
     setSubmitting(true)
 
     try {
-      // 1. Générer le planning de roulement si des membres sont présents
       if (leagueMembers.length > 0) {
         const scheduleInserts = leagueMembers.map((member, index) => ({
           league_id: leagueId,
@@ -192,21 +209,17 @@ export default function LeagueView({ leagueId, onBack }) {
           .insert(scheduleInserts)
 
         if (schedError) {
-          console.warn("Attention planning potentiellement déjà existant :", schedError.message)
+          console.warn("Planning potentiellement déjà existant :", schedError.message)
         }
       }
 
-      // 2. Mettre à jour le statut de la ligue à 'active'
       const { error: updateError } = await supabase
         .from('leagues')
         .update({ status: 'active' })
         .eq('id', leagueId)
 
-      if (updateError) {
-        throw updateError
-      }
+      if (updateError) throw updateError
 
-      // 3. Forcer le rechargement immédiat de l'état local
       await fetchData()
       setMessage({ type: 'success', text: "La ligue est lancée ! C'est parti 🍪" })
 
@@ -281,7 +294,7 @@ export default function LeagueView({ leagueId, onBack }) {
     : ratings.filter((r) => (r.week_number || currentWeek) === Number(selectedWeekFilter))
 
   const leagueGlobalAverage = filteredRatings.length > 0
-    ? (filteredRatings.reduce((acc, r) => acc + Number(r.score || 5), 0) / filteredRatings.length).toFixed(1)
+    ? (filteredRatings.reduce((acc, r) => acc + Number(r.score || 0), 0) / filteredRatings.length).toFixed(1)
     : null
 
   if (loading) {
@@ -305,9 +318,6 @@ export default function LeagueView({ leagueId, onBack }) {
     )
   }
 
-  // ==========================================
-  // LOBBY DE RECRUTEMENT
-  // ==========================================
   if (league.status === 'recruiting') {
     const isCreator = user && league.created_by === user.id
     return (
@@ -377,9 +387,6 @@ export default function LeagueView({ leagueId, onBack }) {
     )
   }
 
-  // ==========================================
-  // VUE PRINCIPALE (LIGUE ACTIVE)
-  // ==========================================
   return (
     <div className="min-h-screen bg-amber-50/50 p-4 sm:p-6">
       <div className="max-w-5xl mx-auto space-y-6">
@@ -410,7 +417,7 @@ export default function LeagueView({ leagueId, onBack }) {
             <div className="text-sm sm:text-base font-extrabold text-amber-950">
               Cette semaine (#{currentWeek}), c'est{' '}
               <span className="underline decoration-amber-600 decoration-2">
-                {bakeMaster?.profiles?.username || 'un membre'}
+                {bakeMaster?.profiles?.username || bakeMaster?.profiles?.[0]?.username || 'un membre'}
               </span>{' '}
               qui régale avec ses cookies ! 🍪
             </div>
@@ -487,7 +494,7 @@ export default function LeagueView({ leagueId, onBack }) {
                   return (
                     <div key={sched.id} className={`px-3 py-2 rounded-xl border text-xs flex items-center justify-between font-semibold ${isCurrent ? 'bg-amber-100 border-amber-300 text-amber-950 font-extrabold' : 'bg-amber-50/40 border-amber-100 text-amber-900'}`}>
                       <span>Semaine #{sched.week_number} {isCurrent && '(Actuelle)'}</span>
-                      <span>{sched.profiles?.username || 'Non assigné'}</span>
+                      <span>{sched.profiles?.username || sched.profiles?.[0]?.username || 'Non assigné'}</span>
                     </div>
                   )
                 })}
