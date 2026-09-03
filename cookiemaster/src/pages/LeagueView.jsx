@@ -172,7 +172,7 @@ export default function LeagueView({ leagueId, onBack }) {
     }
   }, [leagueId, currentWeek])
 
-  // Lancer la partie (Correction de la logique de génération du planning et du statut)
+  // Lancement de la ligue (Génération du planning + Passage en 'active')
   const handleStartLeague = async () => {
     setMessage(null)
     setSubmitting(true)
@@ -187,7 +187,6 @@ export default function LeagueView({ leagueId, onBack }) {
           assigned_user_id: member.user_id
         }))
 
-        // On insère le planning (ignorer si doublon grâce au statut)
         const { error: schedError } = await supabase
           .from('league_schedule')
           .insert(scheduleInserts)
@@ -277,28 +276,10 @@ export default function LeagueView({ leagueId, onBack }) {
     setTimeout(() => setCopied(false), 2500)
   }
 
-  const availableWeeks = [...new Set(ratings.map((r) => r.week_number || currentWeek))].sort((a, b) => b - a)
-  if (!availableWeeks.includes(currentWeek)) availableWeeks.unshift(currentWeek)
-
   const filteredRatings = selectedWeekFilter === 'all' 
     ? ratings 
     : ratings.filter((r) => (r.week_number || currentWeek) === Number(selectedWeekFilter))
 
-  const getCriteriaAverages = (items) => {
-    if (items.length === 0) return null
-    const totals = CRITERIA.reduce((acc, c) => ({ ...acc, [c.id]: 0 }), {})
-    items.forEach((r) => {
-      CRITERIA.forEach((c) => {
-        let val = r[c.id] ?? r.score ?? 5
-        totals[c.id] += Number(val)
-      })
-    })
-    const averages = {}
-    CRITERIA.forEach((c) => { averages[c.id] = (totals[c.id] / items.length).toFixed(1) })
-    return averages
-  }
-
-  const criteriaAverages = getCriteriaAverages(filteredRatings)
   const leagueGlobalAverage = filteredRatings.length > 0
     ? (filteredRatings.reduce((acc, r) => acc + Number(r.score || 5), 0) / filteredRatings.length).toFixed(1)
     : null
