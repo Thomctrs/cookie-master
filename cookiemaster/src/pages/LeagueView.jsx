@@ -55,7 +55,7 @@ export default function LeagueView({ leagueId, onBack }) {
       .eq('id', leagueId)
       .maybeSingle()
 
-    if (!leagueErr) {
+    if (!leagueErr && leagueData) {
       setLeague(leagueData)
     }
 
@@ -138,18 +138,16 @@ export default function LeagueView({ leagueId, onBack }) {
       .order('created_at', { ascending: false })
 
     if (!ratingsErr) {
-      const formattedRatings = ratingsData || []
-      setRatings(formattedRatings)
+      setRatings(ratingsData || [])
     }
 
     setLoading(false)
   }
 
-  // Chargement initial + Mise en place des abonnements Realtime
+  // Chargement initial + Abonnements Realtime
   useEffect(() => {
     fetchData()
 
-    // Écoute en temps réel des modifications sur cette ligue et ses membres
     const channel = supabase
       .channel(`room-${leagueId}`)
       .on(
@@ -174,33 +172,50 @@ export default function LeagueView({ leagueId, onBack }) {
     }
   }, [leagueId, currentWeek])
 
-  // Lancer la partie (Créateur uniquement) + Génération automatique du planning
+  // Lancer la partie (Correction de la logique de génération du planning et du statut)
   const handleStartLeague = async () => {
-    // 1. Générer le planning de roulement des membres si pas encore fait
-    if (leagueMembers.length > 0) {
-      const scheduleInserts = leagueMembers.map((member, index) => {
-        // Assigner une semaine par membre à partir de la semaine courante
-        return {
+    setMessage(null)
+    setSubmitting(true)
+
+    try {
+      // 1. Générer le planning de roulement si des membres sont présents
+      if (leagueMembers.length > 0) {
+        const scheduleInserts = leagueMembers.map((member, index) => ({
           league_id: leagueId,
           week_number: currentWeek + index,
           year: currentYear,
           assigned_user_id: member.user_id
+        }))
+
+        // On insère le planning (ignorer si doublon grâce au statut)
+        const { error: schedError } = await supabase
+          .from('league_schedule')
+          .insert(scheduleInserts)
+
+        if (schedError) {
+          console.warn("Attention planning potentiellement déjà existant :", schedError.message)
         }
-      })
+      }
 
-      await supabase.from('league_schedule').insert(scheduleInserts)
-    }
+      // 2. Mettre à jour le statut de la ligue à 'active'
+      const { error: updateError } = await supabase
+        .from('leagues')
+        .update({ status: 'active' })
+        .eq('id', leagueId)
 
-    // 2. Changer le statut de la ligue à 'active'
-    const { error } = await supabase
-      .from('leagues')
-      .update({ status: 'active' })
-      .eq('id', leagueId)
+      if (updateError) {
+        throw updateError
+      }
 
-    if (error) {
-      setMessage({ type: 'error', text: "Erreur lors du lancement de la ligue." })
-    } else {
-      setMessage({ type: 'success', text: "La ligue est lancée ! 🍪" })
+      // 3. Forcer le rechargement immédiat de l'état local
+      await fetchData()
+      setMessage({ type: 'success', text: "La ligue est lancée ! C'est parti 🍪" })
+
+    } catch (err) {
+      console.error(err)
+      setMessage({ type: 'error', text: `Erreur lors du lancement : ${err.message}` })
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -366,9 +381,10 @@ export default function LeagueView({ leagueId, onBack }) {
           {isCreator ? (
             <button
               onClick={handleStartLeague}
-              className="w-full bg-amber-800 hover:bg-amber-900 text-white font-bold py-3 rounded-xl shadow-sm transition cursor-pointer text-sm"
+              disabled={submitting}
+              className="w-full bg-amber-800 hover:bg-amber-900 text-white font-bold py-3 rounded-xl shadow-sm transition cursor-pointer text-sm disabled:opacity-50"
             >
-              🚀 Lancer la ligue et générer le planning
+              {submitting ? 'Lancement en cours...' : '🚀 Lancer la ligue et générer le planning'}
             </button>
           ) : (
             <div className="text-center p-3 bg-amber-100/50 rounded-xl text-xs font-medium text-amber-900">
