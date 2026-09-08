@@ -180,7 +180,8 @@ export default function LeagueView({ leagueId, onBack }) {
           league_id: leagueId,
           week_number: currentWeek + index,
           year: currentYear,
-          assigned_user_id: member.user_id
+          assigned_user_id: member.user_id,
+          turn_order: index + 1
         }))
 
         const { error: schedError } = await supabase
