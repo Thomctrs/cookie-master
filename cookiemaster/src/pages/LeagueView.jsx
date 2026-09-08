@@ -3,11 +3,11 @@ import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
 
 const CRITERIA = [
-  { id: 'taste', label: 'Goût', icon: '😋' },
-  { id: 'texture', label: 'Texture', icon: '🤌' },
-  { id: 'appearance', label: 'Apparence', icon: '👀' },
-  { id: 'baking', label: 'Cuisson', icon: '🔥' },
-  { id: 'indulgence', label: 'Gourmandise & Originalité', icon: '✨' }
+  { id: 'taste', label: 'Goût' },
+  { id: 'texture', label: 'Texture' },
+  { id: 'appearance', label: 'Esthétique' },
+  { id: 'baking', label: 'Cuisson' },
+  { id: 'indulgence', label: 'Gourmandise' }
 ]
 
 export default function LeagueView({ leagueId, onBack }) {
@@ -50,7 +50,6 @@ export default function LeagueView({ leagueId, onBack }) {
 
     setLoading(true)
 
-    // 1. Informations sur la ligue
     const { data: leagueData } = await supabase
       .from('leagues')
       .select('*')
@@ -59,7 +58,6 @@ export default function LeagueView({ leagueId, onBack }) {
 
     if (leagueData) setLeague(leagueData)
 
-    // 2. Récupération des membres et de leurs profils
     const { data: membersData } = await supabase
       .from('league_members')
       .select('user_id')
@@ -83,7 +81,6 @@ export default function LeagueView({ leagueId, onBack }) {
     }
     setLeagueMembers(enrichedMembers)
 
-    // 3. Récupération du planning
     const { data: fullSchedData } = await supabase
       .from('league_schedule')
       .select('*')
@@ -91,6 +88,7 @@ export default function LeagueView({ leagueId, onBack }) {
       .eq('year', currentYear)
       .order('week_number', { ascending: true })
 
+    let currentMasterItem = null
     if (fullSchedData && fullSchedData.length > 0) {
       const userIds = fullSchedData.map(s => s.assigned_user_id).filter(Boolean)
       let profilesData = []
@@ -108,14 +106,13 @@ export default function LeagueView({ leagueId, onBack }) {
       }))
 
       setFullSchedule(enrichedSchedule)
-      const currentMaster = enrichedSchedule.find(s => s.week_number === currentWeek)
-      setBakeMaster(currentMaster || null)
+      currentMasterItem = enrichedSchedule.find(s => s.week_number === currentWeek)
+      setBakeMaster(currentMasterItem || null)
     } else {
       setFullSchedule([])
       setBakeMaster(null)
     }
 
-    // 4. Récupération des notes
     const { data: ratingsData } = await supabase
       .from('ratings')
       .select('*')
@@ -210,7 +207,7 @@ export default function LeagueView({ leagueId, onBack }) {
       if (updateError) throw updateError
 
       await fetchData()
-      setMessage({ type: 'success', text: `La ligue est lancée ! Planning généré pour ${leagueMembers.length} semaines. 🍪` })
+      setMessage({ type: 'success', text: `La ligue est lancée pour ${leagueMembers.length} semaines.` })
 
     } catch (err) {
       console.error(err)
@@ -225,9 +222,20 @@ export default function LeagueView({ leagueId, onBack }) {
     return (sum / 5).toFixed(1)
   }
 
+  const isSelfRating = () => {
+    const targetSchedule = fullSchedule.find(s => s.week_number === selectedWeekToRate)
+    if (!targetSchedule) return false
+    return targetSchedule.assigned_user_id === user?.id
+  }
+
   const handleSubmitRating = async (e) => {
     e.preventDefault()
     if (!user?.id || !leagueId) return
+
+    if (isSelfRating()) {
+      setMessage({ type: 'error', text: "Vous ne pouvez pas évaluer votre propre réalisation." })
+      return
+    }
 
     setSubmitting(true)
     setMessage(null)
@@ -284,7 +292,6 @@ export default function LeagueView({ leagueId, onBack }) {
     return true
   })
 
-  // Calcul du classement basé sur les notes des semaines passées
   const rankingMap = {}
   filteredRatings.forEach(r => {
     const weekNum = r.week_number || currentWeek
@@ -330,20 +337,18 @@ export default function LeagueView({ leagueId, onBack }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-amber-50/50 flex items-center justify-center p-4">
-        <div className="text-amber-900 font-semibold flex items-center gap-2">
-          <span className="animate-spin text-2xl">🍪</span> Chargement...
-        </div>
+      <div className="min-h-screen bg-[#FDFBF7] flex items-center justify-center p-4">
+        <div className="text-stone-500 font-medium">Chargement...</div>
       </div>
     )
   }
 
   if (!league) {
     return (
-      <div className="min-h-screen bg-amber-50/50 p-6 flex flex-col items-center justify-center text-center">
-        <p className="text-red-600 font-semibold mb-4">Ligue introuvable ou accès non autorisé.</p>
-        <button onClick={onBack} className="px-4 py-2 bg-amber-800 text-white rounded-xl font-semibold cursor-pointer">
-          ← Retour au Hub
+      <div className="min-h-screen bg-[#FDFBF7] p-6 flex flex-col items-center justify-center text-center">
+        <p className="text-stone-500 mb-4">Ligue introuvable.</p>
+        <button onClick={onBack} className="px-4 py-2 bg-stone-900 text-white text-sm rounded-md hover:bg-stone-800 transition">
+          Retour au tableau de bord
         </button>
       </div>
     )
@@ -352,39 +357,38 @@ export default function LeagueView({ leagueId, onBack }) {
   if (league.status === 'recruiting') {
     const isCreator = user && league.created_by === user.id
     return (
-      <div className="min-h-screen bg-amber-50/50 p-4 sm:p-6 flex items-center justify-center">
-        <div className="max-w-md w-full bg-white p-6 sm:p-8 rounded-2xl shadow-sm border border-amber-100 space-y-6">
+      <div className="min-h-screen bg-[#FDFBF7] p-4 sm:p-6 flex items-center justify-center text-stone-800">
+        <div className="max-w-md w-full bg-white p-6 rounded-lg border border-stone-200 shadow-sm space-y-6">
           <div>
-            <button onClick={onBack} className="text-xs font-bold text-amber-800 hover:text-amber-950 transition flex items-center gap-1 mb-3 cursor-pointer">
-              ← Retour au Hub
+            <button onClick={onBack} className="text-xs font-semibold uppercase text-stone-500 hover:text-stone-900 transition mb-4">
+              ← Retour
             </button>
-            <div className="text-center space-y-2">
-              <span className="text-4xl">⏳</span>
-              <h1 className="text-2xl font-extrabold text-amber-950">{league.name}</h1>
-              <p className="text-xs text-amber-800/80">Ligue en attente de participants...</p>
+            <div className="text-center space-y-1">
+              <h1 className="text-xl font-bold text-stone-900">{league.name}</h1>
+              <p className="text-xs text-stone-500">En attente de participants</p>
             </div>
           </div>
 
-          <div className="bg-amber-50/60 p-4 rounded-xl border border-amber-200 text-center space-y-2">
-            <span className="text-xs font-bold text-amber-900 uppercase">Code d'invitation à partager</span>
-            <div className="text-xl font-mono font-black text-amber-950 bg-white py-2 rounded-lg border border-amber-200">
+          <div className="bg-[#FDFBF7] p-4 rounded-md border border-stone-200 text-center space-y-2">
+            <span className="text-xs uppercase font-semibold text-stone-500">Code d'invitation</span>
+            <div className="text-lg font-mono font-bold text-stone-900 bg-white py-2 rounded border border-stone-200">
               {league.code}
             </div>
-            <button onClick={handleCopyCode} className="text-xs font-bold text-amber-800 underline hover:text-amber-950 cursor-pointer">
+            <button onClick={handleCopyCode} className="text-xs text-stone-600 underline hover:text-stone-900">
               {copied ? 'Code copié !' : 'Copier le code'}
             </button>
           </div>
 
           <div className="space-y-2">
-            <h2 className="text-sm font-bold text-amber-950 flex items-center justify-between">
-              <span>Membres rejoints ({leagueMembers.length})</span>
+            <h2 className="text-xs font-semibold uppercase text-stone-500">
+              Membres inscrits ({leagueMembers.length})
             </h2>
-            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+            <div className="space-y-1 max-h-48 overflow-y-auto">
               {leagueMembers.map((member) => (
-                <div key={member.user_id} className="bg-white px-3 py-2 rounded-xl border border-amber-100 text-xs font-bold text-amber-950 flex items-center justify-between">
+                <div key={member.user_id} className="bg-[#FDFBF7] px-3 py-2 rounded text-xs text-stone-900 flex items-center justify-between border border-stone-100">
                   <span>{member.profiles?.username || 'Membre'}</span>
                   {member.user_id === league.created_by && (
-                    <span className="text-[10px] bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded">Organisateur</span>
+                    <span className="text-[10px] font-semibold bg-stone-200 text-stone-700 px-1.5 py-0.5 rounded">Admin</span>
                   )}
                 </div>
               ))}
@@ -392,7 +396,7 @@ export default function LeagueView({ leagueId, onBack }) {
           </div>
 
           {message && (
-            <div className={`p-3 rounded-xl text-xs font-medium ${message.type === 'error' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-800'}`}>
+            <div className={`p-3 rounded text-xs ${message.type === 'error' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-800'}`}>
               {message.text}
             </div>
           )}
@@ -401,13 +405,13 @@ export default function LeagueView({ leagueId, onBack }) {
             <button
               onClick={handleStartLeague}
               disabled={submitting}
-              className="w-full bg-amber-800 hover:bg-amber-900 text-white font-bold py-3 rounded-xl shadow-sm transition cursor-pointer text-sm disabled:opacity-50"
+              className="w-full bg-stone-900 hover:bg-stone-800 text-white text-xs font-semibold uppercase tracking-wider py-3 rounded transition disabled:opacity-50"
             >
-              {submitting ? 'Lancement...' : `🚀 Lancer la ligue (${leagueMembers.length} semaines)`}
+              {submitting ? 'Lancement...' : `Lancer la ligue (${leagueMembers.length} semaines)`}
             </button>
           ) : (
-            <div className="text-center p-3 bg-amber-100/50 rounded-xl text-xs font-medium text-amber-900">
-              En attente que l'organisateur lance la ligue... 🍪
+            <div className="text-center p-3 bg-stone-100 text-xs text-stone-500 rounded">
+              En attente du créateur pour démarrer la saison.
             </div>
           )}
         </div>
@@ -416,44 +420,42 @@ export default function LeagueView({ leagueId, onBack }) {
   }
 
   return (
-    <div className="min-h-screen bg-amber-50/50 p-4 sm:p-6">
+    <div className="min-h-screen bg-[#FDFBF7] p-4 sm:p-6 text-stone-800 font-sans">
       <div className="max-w-5xl mx-auto space-y-6">
         
-        <header className="bg-white p-6 rounded-2xl shadow-sm border border-amber-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <button onClick={onBack} className="text-xs font-bold text-amber-800 hover:text-amber-950 transition flex items-center gap-1 mb-2 cursor-pointer">
-              ← Retour au Hub
+        <header className="bg-white p-6 rounded-lg border border-stone-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <button onClick={onBack} className="text-xs font-semibold uppercase text-stone-500 hover:text-stone-900 transition mb-2">
+              ← Retour au tableau de bord
             </button>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-amber-950 flex items-center gap-2">
-              <span>🏆</span> {league.name}
+            <h1 className="text-2xl font-bold text-stone-900 tracking-tight">
+              {league.name}
             </h1>
           </div>
 
           {leagueGlobalAverage && (
-            <div className="bg-amber-800 text-white p-3 rounded-xl text-center min-w-[100px]">
-              <div className="text-2xl font-black">{leagueGlobalAverage} ★</div>
-              <div className="text-[10px] text-amber-200 font-medium uppercase">Moyenne Globale</div>
+            <div className="bg-stone-900 text-white p-3 rounded-md text-center min-w-[120px]">
+              <div className="text-xl font-bold">{leagueGlobalAverage} / 5</div>
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">Moyenne Générale</div>
             </div>
           )}
         </header>
 
         {/* Pâtissier de la semaine */}
-        <div className="bg-gradient-to-r from-amber-100 to-amber-200/60 p-4 rounded-2xl border border-amber-300 shadow-sm flex items-center gap-4">
-          <span className="text-3xl sm:text-4xl">👨‍🍳</span>
+        <div className="bg-white p-4 rounded-lg border border-stone-200 shadow-sm flex items-center gap-4">
           <div className="space-y-0.5">
-            <div className="text-[10px] uppercase font-bold tracking-wider text-amber-800">Fournée en cours</div>
-            <div className="text-sm sm:text-base font-extrabold text-amber-950">
-              Cette semaine (#{currentWeek}), c'est{' '}
-              <span className="underline decoration-amber-600 decoration-2">
+            <div className="text-xs font-semibold uppercase text-stone-500">Pâtissier de la semaine</div>
+            <div className="text-sm sm:text-base text-stone-900">
+              Semaine #{currentWeek} — C'est au tour de{' '}
+              <span className="font-semibold underline">
                 {bakeMaster?.profiles?.username || 'un membre'}
-              </span>{' '}
-              qui régale avec ses cookies ! 🍪
+              </span>.
             </div>
           </div>
         </div>
 
         {message && (
-          <div className={`p-4 rounded-xl text-sm font-medium ${message.type === 'error' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-800'}`}>
+          <div className={`p-4 rounded-md text-xs ${message.type === 'error' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-800'}`}>
             {message.text}
           </div>
         )}
@@ -461,15 +463,15 @@ export default function LeagueView({ leagueId, onBack }) {
         <div className="grid md:grid-cols-12 gap-6">
           
           <div className="md:col-span-5 space-y-6">
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-100 space-y-5">
+            <div className="bg-white p-6 rounded-lg border border-stone-200 shadow-sm space-y-5">
               <div className="flex items-center justify-between">
-                <h2 className="text-lg font-bold text-amber-950 flex items-center gap-2">
-                  <span>📝</span> Noter une fournée
+                <h2 className="text-sm font-bold uppercase text-stone-900">
+                  Formulaire d'évaluation
                 </h2>
                 <select
                   value={selectedWeekToRate}
                   onChange={(e) => setSelectedWeekToRate(Number(e.target.value))}
-                  className="bg-amber-50 border border-amber-200 rounded-lg text-xs font-bold text-amber-950 px-2 py-1 outline-none"
+                  className="bg-[#FDFBF7] border border-stone-200 text-xs font-medium text-stone-800 rounded px-2.5 py-1 outline-none"
                 >
                   {fullSchedule.map(s => (
                     <option key={s.week_number} value={s.week_number}>Semaine #{s.week_number}</option>
@@ -477,65 +479,76 @@ export default function LeagueView({ leagueId, onBack }) {
                 </select>
               </div>
 
-              <form onSubmit={handleSubmitRating} className="space-y-4">
-                {CRITERIA.map((criterion) => (
-                  <div key={criterion.id} className="space-y-1.5 bg-amber-50/40 p-3 rounded-xl border border-amber-100">
-                    <div className="flex items-center justify-between text-xs font-bold text-amber-950">
-                      <span>{criterion.icon} {criterion.label}</span>
-                      <span className="text-amber-800 font-mono">{scores[criterion.id]} / 5</span>
-                    </div>
-                    <div className="flex items-center justify-between pt-1">
-                      {[1, 2, 3, 4, 5].map((star) => (
-                        <button
-                          key={star}
-                          type="button"
-                          onClick={() => setScores({ ...scores, [criterion.id]: star })}
-                          className={`text-xl transition-transform hover:scale-125 cursor-pointer ${star <= scores[criterion.id] ? 'opacity-100' : 'opacity-25 grayscale'}`}
-                        >
-                          ⭐
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-
-                <div className="bg-amber-100/60 p-3 rounded-xl text-center flex items-center justify-between px-4 border border-amber-200">
-                  <span className="text-xs font-bold text-amber-900">Note Globale :</span>
-                  <span className="text-xl font-black text-amber-950">{calculateAverage(scores)} / 5</span>
+              {isSelfRating() ? (
+                <div className="p-4 bg-[#FDFBF7] border border-stone-200 rounded text-center space-y-1">
+                  <p className="text-xs font-medium text-stone-700">
+                    Auto-évaluation non autorisée
+                  </p>
+                  <p className="text-xs text-stone-500">
+                    Vous êtes le pâtissier assigné pour la semaine #{selectedWeekToRate}. Seuls les autres membres peuvent évaluer votre réalisation.
+                  </p>
                 </div>
+              ) : (
+                <form onSubmit={handleSubmitRating} className="space-y-4">
+                  {CRITERIA.map((criterion) => (
+                    <div key={criterion.id} className="space-y-1.5 bg-[#FDFBF7] p-3 rounded border border-stone-100">
+                      <div className="flex items-center justify-between text-xs font-medium text-stone-900">
+                        <span>{criterion.label}</span>
+                        <span className="font-mono text-stone-600">{scores[criterion.id]} / 5</span>
+                      </div>
+                      <div className="flex items-center justify-between pt-1">
+                        {[1, 2, 3, 4, 5].map((star) => (
+                          <button
+                            key={star}
+                            type="button"
+                            onClick={() => setScores({ ...scores, [criterion.id]: star })}
+                            className={`text-lg transition-transform hover:scale-110 ${star <= scores[criterion.id] ? 'opacity-100' : 'opacity-20 grayscale'}`}
+                          >
+                            ⭐
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
 
-                <textarea
-                  rows={3}
-                  placeholder="Commentaires..."
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                  className="w-full px-3 py-2 bg-amber-50/30 border border-amber-200 rounded-xl text-amber-950 text-sm focus:outline-none"
-                />
+                  <div className="bg-stone-900 text-white p-3 rounded text-center flex items-center justify-between px-4">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-stone-400">Note Finale</span>
+                    <span className="text-lg font-bold">{calculateAverage(scores)} / 5</span>
+                  </div>
 
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="w-full bg-amber-800 hover:bg-amber-900 text-white font-bold py-3 rounded-xl shadow-sm transition cursor-pointer text-sm"
-                >
-                  {submitting ? 'Enregistrement...' : "Enregistrer et retourner au Hub"}
-                </button>
-              </form>
+                  <textarea
+                    rows={3}
+                    placeholder="Commentaires ou remarques..."
+                    value={comment}
+                    onChange={(e) => setComment(e.target.value)}
+                    className="w-full px-3 py-2 bg-[#FDFBF7] border border-stone-200 rounded text-stone-900 text-xs focus:outline-none placeholder:text-stone-400"
+                  />
+
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="w-full bg-stone-900 hover:bg-stone-800 text-white text-xs font-semibold uppercase tracking-wider py-3 rounded transition"
+                  >
+                    {submitting ? 'Enregistrement...' : "Valider l'évaluation"}
+                  </button>
+                </form>
+              )}
             </div>
 
-            {/* Planning complet */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-100 space-y-3">
-              <h3 className="text-base font-bold text-amber-950 flex items-center gap-2">
-                <span>📅</span> Planning de la saison ({fullSchedule.length} semaines)
+            {/* Calendrier */}
+            <div className="bg-white p-6 rounded-lg border border-stone-200 shadow-sm space-y-3">
+              <h3 className="text-xs font-bold uppercase text-stone-900">
+                Planning ({fullSchedule.length} semaines)
               </h3>
-              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+              <div className="space-y-1.5 max-h-56 overflow-y-auto">
                 {fullSchedule.length === 0 ? (
-                  <p className="text-xs text-amber-800/70 italic text-center py-2">Aucun planning généré.</p>
+                  <p className="text-xs text-stone-400 italic text-center py-2">Aucun calendrier généré.</p>
                 ) : (
                   fullSchedule.map((sched) => {
                     const isCurrent = sched.week_number === currentWeek
                     return (
-                      <div key={sched.id} className={`px-3 py-2 rounded-xl border text-xs flex items-center justify-between font-semibold ${isCurrent ? 'bg-amber-100 border-amber-300 text-amber-950 font-extrabold' : 'bg-amber-50/40 border-amber-100 text-amber-900'}`}>
-                        <span>Semaine #{sched.week_number} {isCurrent && '(Actuelle)'}</span>
+                      <div key={sched.id} className={`px-3 py-2 rounded border text-xs flex items-center justify-between ${isCurrent ? 'bg-stone-100 border-stone-400 font-semibold text-stone-950' : 'bg-[#FDFBF7] border-stone-200 text-stone-700'}`}>
+                        <span>Semaine #{sched.week_number} {isCurrent && '(En cours)'}</span>
                         <span>{sched.profiles?.username || 'Membre'}</span>
                       </div>
                     )
@@ -547,35 +560,35 @@ export default function LeagueView({ leagueId, onBack }) {
 
           <div className="md:col-span-7 space-y-6">
             
-            {/* Classement de la ligue */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-100 space-y-4">
-              <h2 className="text-lg font-bold text-amber-950 flex items-center gap-2">
-                <span>🏅</span> Classement des Pâtissiers (Semaines passées)
+            {/* Classement */}
+            <div className="bg-white p-6 rounded-lg border border-stone-200 shadow-sm space-y-4">
+              <h2 className="text-xs font-bold uppercase text-stone-900">
+                Classement Général
               </h2>
               {leaderboard.length === 0 ? (
-                <p className="text-xs text-amber-800/70 italic py-4 text-center">Aucun classement disponible pour le moment.</p>
+                <p className="text-xs text-stone-400 italic py-4 text-center">Aucune note enregistrée pour le moment.</p>
               ) : (
                 <div className="space-y-3">
                   {leaderboard.map((entry, idx) => (
-                    <div key={entry.username} className="p-4 rounded-xl border border-amber-100 bg-amber-50/30 space-y-3">
+                    <div key={entry.username} className="p-4 border border-stone-200 rounded-md bg-[#FDFBF7] space-y-3">
                       <div className="flex justify-between items-center">
-                        <div className="flex items-center gap-2 font-extrabold text-amber-950 text-sm">
-                          <span className="w-6 h-6 rounded-full bg-amber-200 text-amber-900 flex items-center justify-center text-xs">
-                            #{idx + 1}
+                        <div className="flex items-center gap-2 text-stone-900 text-xs font-semibold">
+                          <span className="w-5 h-5 rounded-full bg-stone-200 text-stone-800 flex items-center justify-center font-mono text-[10px]">
+                            {idx + 1}
                           </span>
                           <span>{entry.username}</span>
                         </div>
-                        <div className="bg-amber-800 text-white px-2.5 py-1 rounded-lg text-xs font-black">
-                          {entry.avgGlobal} ★
+                        <div className="bg-stone-900 text-white px-2 py-0.5 rounded text-xs font-bold">
+                          {entry.avgGlobal} / 5
                         </div>
                       </div>
 
-                      {/* Détail des catégories */}
-                      <div className="grid grid-cols-5 gap-1.5 pt-1 border-t border-amber-200/50 text-center">
+                      {/* Détail par critères */}
+                      <div className="grid grid-cols-5 gap-1 pt-2 border-t border-stone-200 text-center">
                         {CRITERIA.map(crit => (
-                          <div key={crit.id} className="bg-white p-1.5 rounded-lg border border-amber-100">
-                            <div className="text-[10px] text-amber-800/70">{crit.icon}</div>
-                            <div className="text-xs font-bold text-amber-950 mt-0.5">
+                          <div key={crit.id} className="bg-white p-1.5 rounded border border-stone-100">
+                            <div className="text-[10px] text-stone-500">{crit.label}</div>
+                            <div className="text-[11px] font-mono font-bold text-stone-800 mt-0.5">
                               {entry[crit.id]}
                             </div>
                           </div>
@@ -587,22 +600,22 @@ export default function LeagueView({ leagueId, onBack }) {
               )}
             </div>
 
-            {/* Historique des avis */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-100 space-y-4">
-              <h2 className="text-lg font-bold text-amber-950 flex items-center gap-2">
-                <span>💬</span> Historique des avis (publié après la semaine)
+            {/* Historique */}
+            <div className="bg-white p-6 rounded-lg border border-stone-200 shadow-sm space-y-4">
+              <h2 className="text-xs font-bold uppercase text-stone-900">
+                Historique des avis
               </h2>
               {filteredRatings.length === 0 ? (
-                <p className="text-xs text-amber-800/70 italic py-6 text-center">Aucun avis publié pour le moment (les notes de la semaine en cours sont masquées jusqu'à dimanche minuit).</p>
+                <p className="text-xs text-stone-400 italic py-6 text-center">Aucun avis publié pour les semaines précédentes.</p>
               ) : (
-                <div className="space-y-4 max-h-96 overflow-y-auto pr-1">
+                <div className="space-y-3 max-h-96 overflow-y-auto">
                   {filteredRatings.map((item) => (
-                    <div key={item.id} className="p-4 rounded-xl border border-amber-100 bg-white space-y-2">
-                      <div className="flex justify-between items-center text-xs font-bold text-amber-950">
-                        <span>{item.profiles?.username} (Semaine #{item.week_number || currentWeek})</span>
-                        <span className="bg-amber-100 px-2 py-0.5 rounded">{item.score} ★</span>
+                    <div key={item.id} className="p-4 border border-stone-200 rounded-md bg-white space-y-2">
+                      <div className="flex justify-between items-center text-xs text-stone-800">
+                        <span className="font-semibold">{item.profiles?.username} <span className="font-normal text-stone-500">(Semaine #{item.week_number || currentWeek})</span></span>
+                        <span className="bg-stone-100 px-2 py-0.5 rounded border border-stone-200 text-stone-900 font-bold">{item.score} / 5</span>
                       </div>
-                      {item.comment && <p className="text-xs text-amber-900 italic">"{item.comment}"</p>}
+                      {item.comment && <p className="text-xs text-stone-600 italic">"{item.comment}"</p>}
                     </div>
                   ))}
                 </div>
