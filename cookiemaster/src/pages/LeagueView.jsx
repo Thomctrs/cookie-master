@@ -373,17 +373,17 @@ export default function LeagueView({ leagueId, onBack }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#FBF9F5] flex items-center justify-center p-4">
-        <div className="text-stone-600 font-medium animate-pulse">On prépare le four, un instant...</div>
+      <div className="min-h-screen bg-[#FDF8F2] flex items-center justify-center p-4">
+        <div className="text-[#5C3A21] font-medium animate-pulse">On sort les pépites de chocolat du placard...</div>
       </div>
     )
   }
 
   if (!league) {
     return (
-      <div className="min-h-screen bg-[#FBF9F5] p-6 flex flex-col items-center justify-center text-center">
-        <p className="text-stone-600 mb-4">Oups, impossible de mettre la main sur cette ligue.</p>
-        <button onClick={onBack} className="px-4 py-2 bg-stone-700 text-white text-sm rounded-lg hover:bg-stone-800 transition shadow-sm">
+      <div className="min-h-screen bg-[#FDF8F2] p-6 flex flex-col items-center justify-center text-center">
+        <p className="text-[#5C3A21] mb-4">Oups, impossible de mettre la main sur cette ligue.</p>
+        <button onClick={onBack} className="px-4 py-2 bg-[#5C3A21] text-[#FDF8F2] text-sm rounded-xl hover:bg-[#3D2513] transition shadow-sm font-medium">
           Retour au QG
         </button>
       </div>
@@ -393,42 +393,42 @@ export default function LeagueView({ leagueId, onBack }) {
   if (league.status === 'recruiting') {
     const isCreator = user && league.created_by === user.id
     return (
-      <div className="min-h-screen bg-[#FBF9F5] bg-[radial-gradient(#E8E2D5_1px,transparent_1px)] [background-size:16px_16px] p-4 sm:p-6 flex items-center justify-center text-stone-800">
-        <div className="max-w-md w-full bg-white/95 backdrop-blur p-6 rounded-2xl border border-stone-200 shadow-lg space-y-6">
+      <div className="min-h-screen bg-[#FDF8F2] bg-[radial-gradient(#E8D8C4_1px,transparent_1px)] [background-size:16px_16px] p-4 sm:p-6 flex items-center justify-center text-[#3D2513]">
+        <div className="max-w-md w-full bg-white/95 backdrop-blur p-6 rounded-3xl border border-[#D9BFA8] shadow-xl space-y-6">
           <div className="flex items-center gap-3">
             <img 
               src={logo} 
               alt="Logo" 
-              className="w-12 h-12 object-contain rounded-xl shadow-xs border border-stone-200" 
+              className="w-12 h-12 object-contain rounded-2xl shadow-xs border border-[#D9BFA8] bg-[#F5EBE1]" 
             />
             <div>
-              <button onClick={onBack} className="text-xs font-bold uppercase tracking-wider text-stone-500 hover:text-stone-800 transition mb-1 inline-block">
+              <button onClick={onBack} className="text-xs font-bold uppercase tracking-wider text-[#8C6239] hover:text-[#3D2513] transition mb-1 inline-block">
                 ← Retour
               </button>
-              <h1 className="text-xl font-black text-stone-900 tracking-tight">{league.name}</h1>
+              <h1 className="text-xl font-black text-[#2A180C] tracking-tight">{league.name}</h1>
             </div>
           </div>
 
-          <div className="bg-[#F7F4EE] p-4 rounded-xl border border-stone-200 text-center space-y-2">
-            <span className="text-[11px] uppercase font-bold tracking-wider text-stone-500">Code secret de l'openspace</span>
-            <div className="text-xl font-mono font-black text-stone-800 bg-white py-2.5 rounded-lg border border-stone-200 shadow-inner tracking-widest">
+          <div className="bg-[#FAF2EB] p-4 rounded-2xl border border-[#D9BFA8] text-center space-y-2">
+            <span className="text-[11px] uppercase font-bold tracking-wider text-[#8C6239]">Code secret de l'openspace</span>
+            <div className="text-xl font-mono font-black text-[#3D2513] bg-white py-2.5 rounded-xl border border-[#D9BFA8] shadow-inner tracking-widest">
               {league.code}
             </div>
-            <button onClick={handleCopyCode} className="text-xs font-semibold text-stone-600 hover:text-stone-900 underline">
+            <button onClick={handleCopyCode} className="text-xs font-semibold text-[#8C6239] hover:text-[#3D2513] underline">
               {copied ? '✨ Code copié, balance-le aux collègues !' : 'Copier le code'}
             </button>
           </div>
 
           <div className="space-y-2">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-stone-500">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-[#8C6239]">
               Les gourmands inscrits ({leagueMembers.length})
             </h2>
             <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
               {leagueMembers.map((member) => (
-                <div key={member.user_id} className="bg-[#FBF9F5] px-3.5 py-2.5 rounded-xl text-xs text-stone-800 flex items-center justify-between border border-stone-200/80 font-medium">
+                <div key={member.user_id} className="bg-[#FDF8F2] px-3.5 py-2.5 rounded-xl text-xs text-[#3D2513] flex items-center justify-between border border-[#E4D1BE] font-medium">
                   <span>{member.profiles?.username || 'Collègue'}</span>
                   {member.user_id === league.created_by && (
-                    <span className="text-[10px] font-bold bg-stone-200 text-stone-800 px-2 py-0.5 rounded-full shadow-xs">Chef de Bande</span>
+                    <span className="text-[10px] font-bold bg-[#E6A15C] text-[#2A180C] px-2.5 py-0.5 rounded-full shadow-2xs border border-[#D48D47]">Chef de Bande</span>
                   )}
                 </div>
               ))}
@@ -436,7 +436,7 @@ export default function LeagueView({ leagueId, onBack }) {
           </div>
 
           {message && (
-            <div className={`p-3.5 rounded-xl text-xs font-medium ${message.type === 'error' ? 'bg-red-50 text-red-800 border border-red-200' : 'bg-emerald-50 text-emerald-900 border border-emerald-200'}`}>
+            <div className={`p-3.5 rounded-xl text-xs font-medium ${message.type === 'error' ? 'bg-rose-50 text-rose-900 border border-rose-200' : 'bg-emerald-50 text-emerald-900 border border-emerald-200'}`}>
               {message.text}
             </div>
           )}
@@ -445,12 +445,12 @@ export default function LeagueView({ leagueId, onBack }) {
             <button
               onClick={handleStartLeague}
               disabled={submitting}
-              className="w-full bg-stone-800 hover:bg-stone-900 text-white text-xs font-bold uppercase tracking-wider py-3.5 rounded-xl transition shadow-md disabled:opacity-50"
+              className="w-full bg-[#5C3A21] hover:bg-[#3D2513] text-[#FDF8F2] text-xs font-bold uppercase tracking-wider py-3.5 rounded-2xl transition shadow-md disabled:opacity-50"
             >
               {submitting ? 'Lancement...' : `Lancer la ligue (${leagueMembers.length} participants) 🍪`}
             </button>
           ) : (
-            <div className="text-center p-3.5 bg-[#F7F4EE] text-xs font-medium text-stone-600 rounded-xl border border-stone-200">
+            <div className="text-center p-3.5 bg-[#FAF2EB] text-xs font-medium text-[#734A2C] rounded-2xl border border-[#D9BFA8]">
               En attente que le créateur lance les hostilités de la première fournée.
             </div>
           )}
@@ -460,42 +460,42 @@ export default function LeagueView({ leagueId, onBack }) {
   }
 
   return (
-    <div className="min-h-screen bg-[#FBF9F5] bg-[radial-gradient(#E8E2D5_1px,transparent_1px)] [background-size:18px_18px] p-4 sm:p-6 text-stone-800 font-sans">
+    <div className="min-h-screen bg-[#FDF8F2] bg-[radial-gradient(#E8D8C4_1px,transparent_1px)] [background-size:18px_18px] p-4 sm:p-6 text-[#3D2513] font-sans">
       <div className="max-w-5xl mx-auto space-y-6">
         
-        <header className="bg-white/95 backdrop-blur p-6 rounded-2xl border border-stone-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <header className="bg-white/95 backdrop-blur p-6 rounded-3xl border border-[#D9BFA8] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <img 
               src={logo} 
               alt="Logo" 
-              className="w-12 h-12 object-contain rounded-xl shadow-xs border border-stone-200 shrink-0" 
+              className="w-12 h-12 object-contain rounded-2xl shadow-xs border border-[#D9BFA8] shrink-0 bg-[#F5EBE1]" 
             />
             <div>
-              <button onClick={onBack} className="text-xs font-bold uppercase tracking-wider text-stone-500 hover:text-stone-800 transition mb-1 inline-flex items-center gap-1">
+              <button onClick={onBack} className="text-xs font-bold uppercase tracking-wider text-[#8C6239] hover:text-[#3D2513] transition mb-1 inline-flex items-center gap-1">
                 ← Retour au tableau de bord
               </button>
-              <h1 className="text-2xl sm:text-3xl font-black text-stone-900 tracking-tight">
+              <h1 className="text-2xl sm:text-3xl font-black text-[#2A180C] tracking-tight">
                 {league.name}
               </h1>
             </div>
           </div>
 
           {leagueGlobalAverage && (
-            <div className="bg-stone-800 text-white p-3.5 rounded-xl text-center min-w-[130px] shadow-sm">
-              <div className="text-2xl font-black">{leagueGlobalAverage} <span className="text-sm font-normal text-stone-400">/ 5</span></div>
-              <div className="text-[10px] font-bold uppercase tracking-wider text-stone-300">Note globale du bureau</div>
+            <div className="bg-[#5C3A21] text-[#FDF8F2] p-4 rounded-2xl text-center min-w-[130px] shadow-sm border border-[#3D2513]">
+              <div className="text-2xl font-black">{leagueGlobalAverage} <span className="text-sm font-normal text-[#D9BFA8]">/ 5</span></div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-[#EEDCC7]">Note globale du bureau</div>
             </div>
           )}
         </header>
 
         {/* Cuisinier de la semaine */}
-        <div className="bg-[#EFECE6] border border-stone-300 text-stone-900 p-5 rounded-2xl shadow-sm flex items-center gap-4">
-          <div className="text-3xl bg-white/70 p-3 rounded-xl shadow-2xs backdrop-blur-sm">🍪</div>
+        <div className="bg-gradient-to-r from-[#F5EBE1] via-[#FAF2EB] to-[#EEDCC7] border border-[#D9BFA8] text-[#3D2513] p-5 rounded-3xl shadow-xs flex items-center gap-4">
+          <div className="text-3xl bg-white/80 p-3 rounded-2xl shadow-2xs backdrop-blur-sm border border-[#D9BFA8] shrink-0">🍪</div>
           <div className="space-y-0.5">
-            <div className="text-xs font-bold uppercase tracking-wider text-stone-500">Cible de la semaine (ou Chef prodige)</div>
-            <div className="text-base sm:text-lg font-bold">
+            <div className="text-xs font-bold uppercase tracking-wider text-[#8C6239]">Cible de la semaine (ou Chef prodige)</div>
+            <div className="text-base sm:text-lg font-bold text-[#2A180C]">
               Semaine #{currentWeek} — C'est au tour de{' '}
-              <span className="underline decoration-stone-400 decoration-2 underline-offset-4">
+              <span className="text-[#5C3A21] underline decoration-[#D48D47] decoration-2 underline-offset-4">
                 {bakeMaster?.profiles?.username || 'un collègue'}
               </span> de nous régaler ! (Pas de pression 😇)
             </div>
@@ -503,7 +503,7 @@ export default function LeagueView({ leagueId, onBack }) {
         </div>
 
         {message && (
-          <div className={`p-4 rounded-xl text-xs font-medium shadow-sm ${message.type === 'error' ? 'bg-red-50 text-red-800 border border-red-200' : 'bg-emerald-50 text-emerald-900 border border-emerald-200'}`}>
+          <div className={`p-4 rounded-2xl text-xs font-medium shadow-sm ${message.type === 'error' ? 'bg-rose-50 text-rose-900 border border-rose-200' : 'bg-emerald-50 text-emerald-900 border border-emerald-200'}`}>
             {message.text}
           </div>
         )}
@@ -511,15 +511,15 @@ export default function LeagueView({ leagueId, onBack }) {
         <div className="grid md:grid-cols-12 gap-6">
           
           <div className="md:col-span-5 space-y-6">
-            <div className="bg-white/95 backdrop-blur p-6 rounded-2xl border border-stone-200 shadow-sm space-y-5">
+            <div className="bg-white/95 backdrop-blur p-6 rounded-3xl border border-[#D9BFA8] shadow-sm space-y-5">
               <div className="flex items-center justify-between">
-                <h2 className="text-xs font-black uppercase tracking-wider text-stone-900">
+                <h2 className="text-xs font-black uppercase tracking-wider text-[#2A180C]">
                   🎯 Noter la fournée
                 </h2>
                 <select
                   value={selectedWeekToRate}
                   onChange={(e) => setSelectedWeekToRate(Number(e.target.value))}
-                  className="bg-[#F7F4EE] border border-stone-200 text-xs font-bold text-stone-800 rounded-lg px-3 py-1.5 outline-none shadow-inner cursor-pointer"
+                  className="bg-[#FAF2EB] border border-[#D9BFA8] text-xs font-bold text-[#3D2513] rounded-xl px-3.5 py-2 outline-none shadow-inner cursor-pointer"
                 >
                   {fullSchedule
                     .filter(s => s.week_number <= currentWeek)
@@ -533,30 +533,30 @@ export default function LeagueView({ leagueId, onBack }) {
               </div>
 
               {selectedWeekToRate > currentWeek ? (
-                <div className="p-4 bg-[#F7F4EE] border border-stone-200 rounded-xl text-center space-y-1">
-                  <p className="text-xs font-bold text-stone-800">
+                <div className="p-4 bg-[#FAF2EB] border border-[#D9BFA8] rounded-2xl text-center space-y-1">
+                  <p className="text-xs font-bold text-[#3D2513]">
                     🕒 Un peu de patience !
                   </p>
-                  <p className="text-xs text-stone-600">
+                  <p className="text-xs text-[#734A2C]">
                     Tu ne peux pas noter une semaine qui n'a pas encore commencé.
                   </p>
                 </div>
               ) : isSelfRating() ? (
-                <div className="p-4 bg-[#F7F4EE] border border-stone-200 rounded-xl text-center space-y-1">
-                  <p className="text-xs font-bold text-stone-800">
+                <div className="p-4 bg-[#FAF2EB] border border-[#D9BFA8] rounded-2xl text-center space-y-1">
+                  <p className="text-xs font-bold text-[#3D2513]">
                     🕵️‍♂️ Auto-jugement interdit
                   </p>
-                  <p className="text-xs text-stone-600">
+                  <p className="text-xs text-[#734A2C]">
                     C'était ton tour en Semaine #{selectedWeekToRate}. Laisse tes collègues juger ton chef-d'œuvre.
                   </p>
                 </div>
               ) : (
                 <form onSubmit={handleSubmitRating} className="space-y-4">
                   {CRITERIA.map((criterion) => (
-                    <div key={criterion.id} className="space-y-1.5 bg-[#FBF9F5] p-3.5 rounded-xl border border-stone-200/60 shadow-2xs">
-                      <div className="flex items-center justify-between text-xs font-bold text-stone-900">
+                    <div key={criterion.id} className="space-y-1.5 bg-[#FAF2EB]/60 p-3.5 rounded-2xl border border-[#D9BFA8]/60 shadow-2xs">
+                      <div className="flex items-center justify-between text-xs font-bold text-[#3D2513]">
                         <span>{criterion.label}</span>
-                        <span className="font-mono text-stone-700 bg-stone-100 px-2 py-0.5 rounded text-[11px]">{scores[criterion.id]} / 5</span>
+                        <span className="font-mono text-[#5C3A21] bg-white px-2.5 py-0.5 rounded-lg text-[11px] border border-[#D9BFA8]">{scores[criterion.id]} / 5</span>
                       </div>
                       <div className="flex items-center justify-between pt-1">
                         {[1, 2, 3, 4, 5].map((star) => (
@@ -564,7 +564,7 @@ export default function LeagueView({ leagueId, onBack }) {
                             key={star}
                             type="button"
                             onClick={() => setScores({ ...scores, [criterion.id]: star })}
-                            className={`text-xl transition-transform hover:scale-125 ${star <= scores[criterion.id] ? 'opacity-100 drop-shadow' : 'opacity-20 grayscale'}`}
+                            className={`text-xl transition-transform hover:scale-125 ${star <= scores[criterion.id] ? 'opacity-100 drop-shadow-xs' : 'opacity-25 grayscale'}`}
                           >
                             🍪
                           </button>
@@ -573,9 +573,9 @@ export default function LeagueView({ leagueId, onBack }) {
                     </div>
                   ))}
 
-                  <div className="bg-stone-800 text-white p-3.5 rounded-xl text-center flex items-center justify-between px-4 shadow-sm">
-                    <span className="text-xs font-bold uppercase tracking-wider text-stone-300">Note du jury (Toi)</span>
-                    <span className="text-xl font-black">{calculateAverage(scores)} <span className="text-xs text-stone-400 font-normal">/ 5</span></span>
+                  <div className="bg-[#5C3A21] text-[#FDF8F2] p-4 rounded-2xl text-center flex items-center justify-between px-4 shadow-sm border border-[#3D2513]">
+                    <span className="text-xs font-bold uppercase tracking-wider text-[#EEDCC7]">Note du jury (Toi)</span>
+                    <span className="text-xl font-black">{calculateAverage(scores)} <span className="text-xs text-[#D9BFA8] font-normal">/ 5</span></span>
                   </div>
 
                   <textarea
@@ -583,13 +583,13 @@ export default function LeagueView({ leagueId, onBack }) {
                     placeholder="Un petit mot doux pour décrire ton expérience..."
                     value={comment}
                     onChange={(e) => setComment(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-[#FBF9F5] border border-stone-200 rounded-xl text-stone-900 text-xs focus:outline-none focus:ring-2 focus:ring-stone-400 placeholder:text-stone-400 shadow-inner"
+                    className="w-full px-4 py-3 bg-[#FAF2EB]/40 border border-[#D9BFA8] rounded-2xl text-[#3D2513] text-xs focus:outline-none focus:ring-2 focus:ring-[#8C6239] placeholder:text-[#A68A72] shadow-inner"
                   />
 
                   <button
                     type="submit"
                     disabled={submitting}
-                    className="w-full bg-stone-800 hover:bg-stone-900 text-white text-xs font-bold uppercase tracking-wider py-3.5 rounded-xl transition shadow-md"
+                    className="w-full bg-[#5C3A21] hover:bg-[#3D2513] text-[#FDF8F2] text-xs font-bold uppercase tracking-wider py-3.5 rounded-2xl transition shadow-md"
                   >
                     {submitting ? 'Enregistrement...' : "Envoyer les notes 🎯"}
                   </button>
@@ -598,18 +598,18 @@ export default function LeagueView({ leagueId, onBack }) {
             </div>
 
             {/* Calendrier */}
-            <div className="bg-white/95 backdrop-blur p-6 rounded-2xl border border-stone-200 shadow-sm space-y-3">
-              <h3 className="text-xs font-black uppercase tracking-wider text-stone-900">
+            <div className="bg-white/95 backdrop-blur p-6 rounded-3xl border border-[#D9BFA8] shadow-sm space-y-3">
+              <h3 className="text-xs font-black uppercase tracking-wider text-[#2A180C]">
                 📅 Les prochains cuistots ({fullSchedule.length} sem.)
               </h3>
               <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
                 {fullSchedule.length === 0 ? (
-                  <p className="text-xs text-stone-400 italic text-center py-2">Le planning est vide pour l'instant.</p>
+                  <p className="text-xs text-[#A68A72] italic text-center py-2">Le planning est vide pour l'instant.</p>
                 ) : (
                   fullSchedule.map((sched) => {
                     const isCurrent = sched.week_number === currentWeek
                     return (
-                      <div key={sched.id} className={`px-3.5 py-2.5 rounded-xl border text-xs flex items-center justify-between transition ${isCurrent ? 'bg-[#EFECE6] border-stone-400 font-bold text-stone-900 shadow-xs' : 'bg-[#FBF9F5] border-stone-200 text-stone-700'}`}>
+                      <div key={sched.id} className={`px-4 py-2.5 rounded-2xl border text-xs flex items-center justify-between transition ${isCurrent ? 'bg-[#EEDCC7] border-[#C8A88A] font-bold text-[#2A180C] shadow-2xs' : 'bg-[#FAF2EB]/30 border-[#D9BFA8]/60 text-[#734A2C]'}`}>
                         <span>Semaine #{sched.week_number} {isCurrent && '🔥 (C\'est le moment !)'}</span>
                         <span className="font-semibold">{sched.profiles?.username || 'Collègue'}</span>
                       </div>
@@ -623,34 +623,34 @@ export default function LeagueView({ leagueId, onBack }) {
           <div className="md:col-span-7 space-y-6">
             
             {/* Classement */}
-            <div className="bg-white/95 backdrop-blur p-6 rounded-2xl border border-stone-200 shadow-sm space-y-4">
-              <h2 className="text-xs font-black uppercase tracking-wider text-stone-900">
+            <div className="bg-white/95 backdrop-blur p-6 rounded-3xl border border-[#D9BFA8] shadow-sm space-y-4">
+              <h2 className="text-xs font-black uppercase tracking-wider text-[#2A180C]">
                 🏆 Classement de l'openspace
               </h2>
               {leaderboard.length === 0 ? (
-                <p className="text-xs text-stone-400 italic py-6 text-center">Aucune note validée pour l'instant. Personne n'a encore pris de risque en cuisine !</p>
+                <p className="text-xs text-[#A68A72] italic py-6 text-center">Aucune note validée pour l'instant. Personne n'a encore pris de risque en cuisine !</p>
               ) : (
                 <div className="space-y-3.5">
                   {leaderboard.map((entry, idx) => (
-                    <div key={entry.username} className="p-4 border border-stone-200 rounded-xl bg-[#F7F4EE]/50 space-y-3 shadow-2xs">
+                    <div key={entry.username} className="p-4 border border-[#D9BFA8] rounded-2xl bg-[#FAF2EB]/40 space-y-3 shadow-2xs">
                       <div className="flex justify-between items-center">
-                        <div className="flex items-center gap-2.5 text-stone-900 text-xs font-bold">
-                          <span className={`w-6 h-6 rounded-full flex items-center justify-center font-mono text-xs shadow-xs ${idx === 0 ? 'bg-stone-800 text-white font-black' : idx === 1 ? 'bg-stone-300 text-stone-900 font-bold' : idx === 2 ? 'bg-stone-400 text-white font-bold' : 'bg-stone-100 text-stone-700'}`}>
+                        <div className="flex items-center gap-2.5 text-[#3D2513] text-xs font-bold">
+                          <span className={`w-7 h-7 rounded-xl flex items-center justify-center font-mono text-xs shadow-2xs ${idx === 0 ? 'bg-[#5C3A21] text-[#FDF8F2] font-black' : idx === 1 ? 'bg-[#D48D47] text-[#2A180C] font-bold' : idx === 2 ? 'bg-[#E6A15C] text-[#2A180C] font-bold' : 'bg-[#EEDCC7] text-[#5C3A21]'}`}>
                             {idx + 1}
                           </span>
-                          <span className="text-sm">{entry.username}</span>
+                          <span className="text-sm font-black text-[#2A180C]">{entry.username}</span>
                         </div>
-                        <div className="bg-stone-800 text-white px-2.5 py-1 rounded-lg text-xs font-black shadow-2xs">
+                        <div className="bg-[#5C3A21] text-[#FDF8F2] px-3 py-1 rounded-xl text-xs font-black shadow-2xs border border-[#3D2513]">
                           {entry.avgGlobal} / 5
                         </div>
                       </div>
 
                       {/* Détail par critères */}
-                      <div className="grid grid-cols-5 gap-1.5 pt-2 border-t border-stone-200 text-center">
+                      <div className="grid grid-cols-5 gap-1.5 pt-2 border-t border-[#D9BFA8]/60 text-center">
                         {CRITERIA.map(crit => (
-                          <div key={crit.id} className="bg-white p-1.5 rounded-lg border border-stone-200/80 shadow-2xs">
-                            <div className="text-[10px] font-bold text-stone-500 uppercase">{crit.label}</div>
-                            <div className="text-[11px] font-mono font-black text-stone-800 mt-0.5">
+                          <div key={crit.id} className="bg-white p-2 rounded-xl border border-[#D9BFA8] shadow-2xs">
+                            <div className="text-[10px] font-bold text-[#8C6239] uppercase">{crit.label}</div>
+                            <div className="text-[11px] font-mono font-black text-[#5C3A21] mt-0.5">
                               {entry[crit.id]}
                             </div>
                           </div>
@@ -663,25 +663,25 @@ export default function LeagueView({ leagueId, onBack }) {
             </div>
 
             {/* Historique */}
-            <div className="bg-white/95 backdrop-blur p-6 rounded-2xl border border-stone-200 shadow-sm space-y-4">
-              <h2 className="text-xs font-black uppercase tracking-wider text-stone-900">
+            <div className="bg-white/95 backdrop-blur p-6 rounded-3xl border border-[#D9BFA8] shadow-sm space-y-4">
+              <h2 className="text-xs font-black uppercase tracking-wider text-[#2A180C]">
                 📜 Les archives de la machine à café (Historique)
               </h2>
               {filteredRatings.length === 0 ? (
-                <p className="text-xs text-stone-400 italic py-6 text-center">Rien à signaler pour les semaines passées.</p>
+                <p className="text-xs text-[#A68A72] italic py-6 text-center">Rien à signaler pour les semaines passées.</p>
               ) : (
                 <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
                   {filteredRatings.map((item) => (
-                    <div key={item.id} className="p-4 border border-stone-200 rounded-xl bg-[#FBF9F5] space-y-2 shadow-2xs">
-                      <div className="flex justify-between items-center text-xs text-stone-800">
+                    <div key={item.id} className="p-4 border border-[#D9BFA8] rounded-2xl bg-[#FAF2EB]/30 space-y-2 shadow-2xs">
+                      <div className="flex justify-between items-center text-xs text-[#3D2513]">
                         <span className="font-bold">
-                          {item.profiles?.username} <span className="font-normal text-stone-500">(Semaine #{item.week_number || currentWeek})</span>
+                          {item.profiles?.username} <span className="font-normal text-[#8C6239]">(Semaine #{item.week_number || currentWeek})</span>
                         </span>
-                        <span className="bg-stone-200 text-stone-800 px-2.5 py-0.5 rounded-md border border-stone-300 font-black">
+                        <span className="bg-[#EEDCC7] text-[#5C3A21] px-2.5 py-1 rounded-xl border border-[#D9BFA8] font-black shadow-2xs">
                           {item.score} / 5
                         </span>
                       </div>
-                      {item.comment && <p className="text-xs text-stone-600 italic bg-white p-2.5 rounded-lg border border-stone-200/60">"{item.comment}"</p>}
+                      {item.comment && <p className="text-xs text-[#734A2C] italic bg-white p-3 rounded-xl border border-[#D9BFA8] shadow-inner">"{item.comment}"</p>}
                     </div>
                   ))}
                 </div>
