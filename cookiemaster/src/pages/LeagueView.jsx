@@ -89,8 +89,40 @@ export default function LeagueView({ leagueId, onBack }) {
       .order('week_number', { ascending: true })
 
     let currentMasterItem = null
-    if (fullSchedData && fullSchedData.length > 0) {
-      const userIds = fullSchedData.map(s => s.assigned_user_id).filter(Boolean)
+    let currentSchedule = fullSchedData || []
+
+    // AUTO-AJOUT : Si la ligue est active et qu'un membre n'a pas de tour assigné, on l'ajoute automatiquement à la fin
+    if (leagueData?.status === 'active' && enrichedMembers.length > 0) {
+      const assignedUserIds = new Set(currentSchedule.map(s => s.assigned_user_id))
+      const unassignedMembers = enrichedMembers.filter(m => !assignedUserIds.has(m.user_id))
+
+      if (unassignedMembers.length > 0) {
+        // Trouver la dernière semaine planifiée ou démarrer à la semaine courante
+        const lastWeek = currentSchedule.length > 0 
+          ? Math.max(...currentSchedule.map(s => s.week_number)) 
+          : currentWeek - 1
+
+        const newInserts = unassignedMembers.map((member, idx) => ({
+          league_id: leagueId,
+          week_number: lastWeek + 1 + idx,
+          year: currentYear,
+          assigned_user_id: member.user_id,
+          turn_order: currentSchedule.length + idx + 1
+        }))
+
+        const { data: insertedData, error: insertErr } = await supabase
+          .from('league_schedule')
+          .insert(newInserts)
+          .select()
+
+        if (!insertErr && insertedData) {
+          currentSchedule = [...currentSchedule, ...insertedData]
+        }
+      }
+    }
+
+    if (currentSchedule.length > 0) {
+      const userIds = currentSchedule.map(s => s.assigned_user_id).filter(Boolean)
       let profilesData = []
       if (userIds.length > 0) {
         const { data: profs } = await supabase
@@ -100,10 +132,10 @@ export default function LeagueView({ leagueId, onBack }) {
         profilesData = profs || []
       }
 
-      const enrichedSchedule = fullSchedData.map(s => ({
+      const enrichedSchedule = currentSchedule.map(s => ({
         ...s,
         profiles: profilesData.find(p => p.id === s.assigned_user_id) || { username: 'Membre' }
-      }))
+      })).sort((a, b) => a.week_number - b.week_number)
 
       setFullSchedule(enrichedSchedule)
       currentMasterItem = enrichedSchedule.find(s => s.week_number === currentWeek)
