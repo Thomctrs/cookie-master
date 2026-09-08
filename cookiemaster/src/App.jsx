@@ -43,7 +43,7 @@ export default function App() {
             onClick={handleBackToHub}
             className="flex items-center gap-2 font-black text-amber-950 text-lg hover:opacity-80 transition cursor-pointer"
           >
-            <span>🍪</span> Cookie League
+            <span>🍪</span> Cookie Challenge
           </button>
 
           <div className="flex items-center gap-2 sm:gap-3">
