@@ -1,130 +1,152 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
+import logo from '../logo/logo.PNG'
 
 export default function Auth() {
-  const [isSignUp, setIsSignUp] = useState(false)
+  const [loading, setLoading] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [username, setUsername] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
-
-
-
-
+  const [isSignUp, setIsSignUp] = useState(false)
+  const [message, setMessage] = useState(null)
 
   const handleAuth = async (e) => {
     e.preventDefault()
     setLoading(true)
-    setError(null)
+    setMessage(null)
 
     try {
       if (isSignUp) {
-        const { error: signUpError } = await supabase.auth.signUp({
+        if (!username.trim()) {
+          throw new Error("Dis-nous comment t'appeler dans les classements !")
+        }
+
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
-            data: { username } // Le trigger SQL récupère automatiquement ce username
+            data: { username: username.trim() }
           }
         })
-        if (signUpError) throw signUpError
-        alert("Inscription réussie ! Si la confirmation e-mail est activée, vérifiez votre boîte mail.")
-      } else {
-        const { error: signInError } = await supabase.auth.signInWithPassword({
-          email,
-          password
+        if (error) throw error
+
+        if (data?.user) {
+          const { error: profileError } = await supabase
+            .from('profiles')
+            .upsert({ id: data.user.id, username: username.trim() })
+          
+          if (profileError) console.error("Erreur profil:", profileError)
+        }
+
+        setMessage({ 
+          type: 'success', 
+          text: 'Compte créé avec succès ! Si demandé, va valider ton e-mail ou connecte-toi direct.' 
         })
-        if (signInError) throw signInError
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        })
+        if (error) throw error
       }
-    } catch (err) {
-      setError(err.message)
+    } catch (error) {
+      setMessage({ type: 'error', text: error.message })
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-amber-50 p-4">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 border border-amber-100">
-        <div className="text-center mb-8">
-          <span className="text-5xl mb-2 block">🍪</span>
-          <h1 className="text-3xl font-bold text-amber-900">Cookiemaster</h1>
-          <p className="text-amber-700 text-sm mt-1">
-            {isSignUp ? 'Créez votre compte de dégustateur' : 'Connectez-vous à votre ligue'}
-          </p>
+    <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50/40 to-stone-100 flex items-center justify-center p-4 text-stone-800 font-sans">
+      <div className="max-w-md w-full bg-white/90 backdrop-blur p-8 rounded-3xl border border-amber-200/60 shadow-xl space-y-6">
+        
+        {/* LOGO EN GROS AU DÉBUT */}
+        <div className="flex flex-col items-center justify-center space-y-3 text-center">
+          <div className="relative group">
+            <div className="absolute -inset-1 bg-gradient-to-r from-amber-500 to-orange-500 rounded-2xl blur opacity-30 group-hover:opacity-75 transition duration-300"></div>
+            <img 
+              src={logo} 
+              alt="Logo de la ligue" 
+              className="relative w-24 h-24 sm:w-28 sm:h-28 object-contain rounded-2xl bg-white p-2 shadow-md border border-amber-200 transform transition group-hover:scale-105" 
+            />
+          </div>
+          <div>
+            <h1 className="text-2xl font-black text-stone-900 tracking-tight">
+              {isSignUp ? "Rejoindre l'arène" : "Bon retour parmi nous !"}
+            </h1>
+            <p className="text-xs text-stone-500 mt-1">
+              {isSignUp ? "Crée ton profil pour participer aux carnages du bureau." : "Connecte-toi pour noter les chefs-d'œuvre (ou les ratés)."}
+            </p>
+          </div>
         </div>
 
-        {error && (
-          <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm mb-4 border border-red-100">
-            {error}
+        {message && (
+          <div className={`p-4 rounded-xl text-xs font-medium shadow-sm ${message.type === 'error' ? 'bg-red-100 text-red-800 border border-red-200' : 'bg-emerald-100 text-emerald-900 border border-emerald-200'}`}>
+            {message.text}
           </div>
         )}
 
         <form onSubmit={handleAuth} className="space-y-4">
           {isSignUp && (
-            <div>
-              <label className="block text-xs font-semibold uppercase text-amber-900 mb-1">
-                Pseudo
-              </label>
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold uppercase tracking-wider text-stone-600">Pseudo / Nom</label>
               <input
                 type="text"
-                required
+                placeholder="Ex: LePâtissierMasqué"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="CookieMonster"
-                className="w-full px-4 py-2 border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
+                required={isSignUp}
+                className="w-full px-4 py-3 bg-amber-50/40 border border-amber-200/60 rounded-xl text-stone-900 text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 placeholder:text-stone-400 shadow-inner"
               />
             </div>
           )}
 
-          <div>
-            <label className="block text-xs font-semibold uppercase text-amber-900 mb-1">
-              E-mail
-            </label>
+          <div className="space-y-1">
+            <label className="text-[11px] font-bold uppercase tracking-wider text-stone-600">Adresse e-mail</label>
             <input
               type="email"
-              required
+              placeholder="nom@entreprise.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="votre@email.com"
-              className="w-full px-4 py-2 border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
+              required
+              className="w-full px-4 py-3 bg-amber-50/40 border border-amber-200/60 rounded-xl text-stone-900 text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 placeholder:text-stone-400 shadow-inner"
             />
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold uppercase text-amber-900 mb-1">
-              Mot de passe
-            </label>
+          <div className="space-y-1">
+            <label className="text-[11px] font-bold uppercase tracking-wider text-stone-600">Mot de passe</label>
             <input
               type="password"
-              required
+              placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              className="w-full px-4 py-2 border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
+              required
+              className="w-full px-4 py-3 bg-amber-50/40 border border-amber-200/60 rounded-xl text-stone-900 text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 placeholder:text-stone-400 shadow-inner"
             />
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-amber-800 hover:bg-amber-900 text-white font-semibold py-3 rounded-lg transition-colors shadow-md disabled:opacity-50"
+            className="w-full bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white text-xs font-bold uppercase tracking-wider py-3.5 rounded-xl transition shadow-md disabled:opacity-50 mt-2"
           >
-            {loading ? 'Chargement...' : isSignUp ? "S'inscrire" : 'Se connecter'}
+            {loading ? 'Patientez...' : isSignUp ? "S'inscrire et aller aux fourneaux 🚀" : "Se connecter 🍰"}
           </button>
         </form>
 
-        <div className="mt-6 text-center">
+        <div className="text-center pt-2 border-t border-amber-100">
           <button
             type="button"
-            onClick={() => setIsSignUp(!isSignUp)}
-            className="text-xs text-amber-800 hover:underline font-medium"
+            onClick={() => {
+              setIsSignUp(!isSignUp)
+              setMessage(null)
+            }}
+            className="text-xs font-semibold text-amber-700 hover:text-amber-900 transition underline"
           >
-            {isSignUp
-              ? 'Déjà un compte ? Connectez-vous'
-              : "Pas encore de compte ? S'inscrire"}
+            {isSignUp ? "Déjà un compte ? Connecte-toi par ici." : "Pas encore de compte ? Crée ton profil !"}
           </button>
         </div>
+
       </div>
     </div>
   )

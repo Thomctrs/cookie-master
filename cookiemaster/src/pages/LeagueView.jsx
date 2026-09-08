@@ -76,7 +76,7 @@ export default function LeagueView({ leagueId, onBack }) {
         const profile = profilesData?.find(p => p.id === m.user_id)
         return {
           user_id: m.user_id,
-          profiles: profile || { username: 'Membre' }
+          profiles: profile || { username: 'Collègue mystère' }
         }
       })
     }
@@ -92,7 +92,6 @@ export default function LeagueView({ leagueId, onBack }) {
     let currentMasterItem = null
     let currentSchedule = fullSchedData || []
 
-    // AUTO-AJOUT : Si la ligue est active et qu'un membre n'a pas de tour assigné, on l'ajoute automatiquement à la fin
     if (leagueData?.status === 'active' && enrichedMembers.length > 0) {
       const assignedUserIds = new Set(currentSchedule.map(s => s.assigned_user_id))
       const unassignedMembers = enrichedMembers.filter(m => !assignedUserIds.has(m.user_id))
@@ -134,7 +133,7 @@ export default function LeagueView({ leagueId, onBack }) {
 
       const enrichedSchedule = currentSchedule.map(s => ({
         ...s,
-        profiles: profilesData.find(p => p.id === s.assigned_user_id) || { username: 'Membre' }
+        profiles: profilesData.find(p => p.id === s.assigned_user_id) || { username: 'Collègue' }
       })).sort((a, b) => a.week_number - b.week_number)
 
       setFullSchedule(enrichedSchedule)
@@ -164,7 +163,7 @@ export default function LeagueView({ leagueId, onBack }) {
 
       const enrichedRatings = ratingsData.map(r => ({
         ...r,
-        profiles: profilesData.find(p => p.id === (r.user_id || r.voter_id)) || { username: 'Membre' }
+        profiles: profilesData.find(p => p.id === (r.user_id || r.voter_id)) || { username: 'Collègue' }
       }))
 
       setRatings(enrichedRatings)
@@ -239,11 +238,11 @@ export default function LeagueView({ leagueId, onBack }) {
       if (updateError) throw updateError
 
       await fetchData()
-      setMessage({ type: 'success', text: `La ligue est lancée pour ${leagueMembers.length} semaines.` })
+      setMessage({ type: 'success', text: `C'est parti ! La ligue est lancée pour ${leagueMembers.length} semaines de régals.` })
 
     } catch (err) {
       console.error(err)
-      setMessage({ type: 'error', text: `Erreur lors du lancement : ${err.message}` })
+      setMessage({ type: 'error', text: `Oups, impossible de lancer la machine : ${err.message}` })
     } finally {
       setSubmitting(false)
     }
@@ -265,12 +264,12 @@ export default function LeagueView({ leagueId, onBack }) {
     if (!user?.id || !leagueId) return
 
     if (selectedWeekToRate > currentWeek) {
-      setMessage({ type: 'error', text: "Impossible de noter une semaine future qui n'a pas encore démarré." })
+      setMessage({ type: 'error', text: "On se calme ! Tu ne peux pas noter une semaine du futur." })
       return
     }
 
     if (isSelfRating()) {
-      setMessage({ type: 'error', text: "Vous ne pouvez pas évaluer votre propre réalisation." })
+      setMessage({ type: 'error', text: "Auto-évaluation interdite. Laisse tes collègues juger !" })
       return
     }
 
@@ -334,7 +333,7 @@ export default function LeagueView({ leagueId, onBack }) {
     const weekNum = r.week_number || currentWeek
     const scheduleItem = fullSchedule.find(s => s.week_number === weekNum)
     const bakerId = scheduleItem?.assigned_user_id || r.user_id
-    const bakerName = scheduleItem?.profiles?.username || r.profiles?.username || 'Membre'
+    const bakerName = scheduleItem?.profiles?.username || r.profiles?.username || 'Collègue'
 
     if (!rankingMap[bakerId]) {
       rankingMap[bakerId] = {
@@ -374,18 +373,18 @@ export default function LeagueView({ leagueId, onBack }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-amber-50/50 flex items-center justify-center p-4">
-        <div className="text-amber-800 font-medium animate-pulse">Chargement de la ligue...</div>
+      <div className="min-h-screen bg-[#FBF9F5] flex items-center justify-center p-4">
+        <div className="text-stone-600 font-medium animate-pulse">On prépare le four, un instant...</div>
       </div>
     )
   }
 
   if (!league) {
     return (
-      <div className="min-h-screen bg-amber-50/50 p-6 flex flex-col items-center justify-center text-center">
-        <p className="text-stone-600 mb-4">Ligue introuvable.</p>
-        <button onClick={onBack} className="px-4 py-2 bg-amber-600 text-white text-sm rounded-lg hover:bg-amber-700 transition shadow-sm">
-          Retour au tableau de bord
+      <div className="min-h-screen bg-[#FBF9F5] p-6 flex flex-col items-center justify-center text-center">
+        <p className="text-stone-600 mb-4">Oups, impossible de mettre la main sur cette ligue.</p>
+        <button onClick={onBack} className="px-4 py-2 bg-stone-700 text-white text-sm rounded-lg hover:bg-stone-800 transition shadow-sm">
+          Retour au QG
         </button>
       </div>
     )
@@ -394,42 +393,42 @@ export default function LeagueView({ leagueId, onBack }) {
   if (league.status === 'recruiting') {
     const isCreator = user && league.created_by === user.id
     return (
-      <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50/30 to-stone-100 p-4 sm:p-6 flex items-center justify-center text-stone-800">
-        <div className="max-w-md w-full bg-white/90 backdrop-blur p-6 rounded-2xl border border-amber-200/60 shadow-xl space-y-6">
+      <div className="min-h-screen bg-[#FBF9F5] bg-[radial-gradient(#E8E2D5_1px,transparent_1px)] [background-size:16px_16px] p-4 sm:p-6 flex items-center justify-center text-stone-800">
+        <div className="max-w-md w-full bg-white/95 backdrop-blur p-6 rounded-2xl border border-stone-200 shadow-lg space-y-6">
           <div className="flex items-center gap-3">
             <img 
               src={logo} 
               alt="Logo" 
-              className="w-12 h-12 object-contain rounded-xl shadow-xs border border-amber-200" 
+              className="w-12 h-12 object-contain rounded-xl shadow-xs border border-stone-200" 
             />
             <div>
-              <button onClick={onBack} className="text-xs font-bold uppercase tracking-wider text-amber-700 hover:text-amber-900 transition mb-1 inline-block">
+              <button onClick={onBack} className="text-xs font-bold uppercase tracking-wider text-stone-500 hover:text-stone-800 transition mb-1 inline-block">
                 ← Retour
               </button>
               <h1 className="text-xl font-black text-stone-900 tracking-tight">{league.name}</h1>
             </div>
           </div>
 
-          <div className="bg-amber-50/80 p-4 rounded-xl border border-amber-200 text-center space-y-2">
-            <span className="text-[11px] uppercase font-bold tracking-wider text-amber-800">Code d'invitation secret</span>
-            <div className="text-xl font-mono font-black text-amber-950 bg-white py-2.5 rounded-lg border border-amber-200 shadow-inner tracking-widest">
+          <div className="bg-[#F7F4EE] p-4 rounded-xl border border-stone-200 text-center space-y-2">
+            <span className="text-[11px] uppercase font-bold tracking-wider text-stone-500">Code secret de l'openspace</span>
+            <div className="text-xl font-mono font-black text-stone-800 bg-white py-2.5 rounded-lg border border-stone-200 shadow-inner tracking-widest">
               {league.code}
             </div>
-            <button onClick={handleCopyCode} className="text-xs font-semibold text-amber-700 hover:text-amber-900 underline">
-              {copied ? '✨ Code copié dans le presse-papier !' : 'Copier le code'}
+            <button onClick={handleCopyCode} className="text-xs font-semibold text-stone-600 hover:text-stone-900 underline">
+              {copied ? '✨ Code copié, balance-le aux collègues !' : 'Copier le code'}
             </button>
           </div>
 
           <div className="space-y-2">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-stone-600">
-              Pâtissiers inscrits ({leagueMembers.length})
+            <h2 className="text-xs font-bold uppercase tracking-wider text-stone-500">
+              Les gourmands inscrits ({leagueMembers.length})
             </h2>
             <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
               {leagueMembers.map((member) => (
-                <div key={member.user_id} className="bg-amber-50/40 px-3.5 py-2.5 rounded-xl text-xs text-stone-800 flex items-center justify-between border border-amber-100 font-medium">
-                  <span>{member.profiles?.username || 'Membre'}</span>
+                <div key={member.user_id} className="bg-[#FBF9F5] px-3.5 py-2.5 rounded-xl text-xs text-stone-800 flex items-center justify-between border border-stone-200/80 font-medium">
+                  <span>{member.profiles?.username || 'Collègue'}</span>
                   {member.user_id === league.created_by && (
-                    <span className="text-[10px] font-bold bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full shadow-xs">Chef Opérateur</span>
+                    <span className="text-[10px] font-bold bg-stone-200 text-stone-800 px-2 py-0.5 rounded-full shadow-xs">Chef de Bande</span>
                   )}
                 </div>
               ))}
@@ -437,7 +436,7 @@ export default function LeagueView({ leagueId, onBack }) {
           </div>
 
           {message && (
-            <div className={`p-3.5 rounded-xl text-xs font-medium ${message.type === 'error' ? 'bg-red-100 text-red-800 border border-red-200' : 'bg-emerald-100 text-emerald-900 border border-emerald-200'}`}>
+            <div className={`p-3.5 rounded-xl text-xs font-medium ${message.type === 'error' ? 'bg-red-50 text-red-800 border border-red-200' : 'bg-emerald-50 text-emerald-900 border border-emerald-200'}`}>
               {message.text}
             </div>
           )}
@@ -446,13 +445,13 @@ export default function LeagueView({ leagueId, onBack }) {
             <button
               onClick={handleStartLeague}
               disabled={submitting}
-              className="w-full bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white text-xs font-bold uppercase tracking-wider py-3.5 rounded-xl transition shadow-md disabled:opacity-50"
+              className="w-full bg-stone-800 hover:bg-stone-900 text-white text-xs font-bold uppercase tracking-wider py-3.5 rounded-xl transition shadow-md disabled:opacity-50"
             >
-              {submitting ? 'Lancement en cours...' : `Lancer la saison (${leagueMembers.length} pâtissiers)`}
+              {submitting ? 'Lancement...' : `Lancer la ligue (${leagueMembers.length} participants) 🍪`}
             </button>
           ) : (
-            <div className="text-center p-3.5 bg-amber-50 text-xs font-medium text-amber-900/80 rounded-xl border border-amber-200/50">
-              En attente du chef de ligue pour lancer le grand départ.
+            <div className="text-center p-3.5 bg-[#F7F4EE] text-xs font-medium text-stone-600 rounded-xl border border-stone-200">
+              En attente que le créateur lance les hostilités de la première fournée.
             </div>
           )}
         </div>
@@ -461,18 +460,18 @@ export default function LeagueView({ leagueId, onBack }) {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-amber-50/70 via-orange-50/20 to-stone-100 p-4 sm:p-6 text-stone-800 font-sans">
+    <div className="min-h-screen bg-[#FBF9F5] bg-[radial-gradient(#E8E2D5_1px,transparent_1px)] [background-size:18px_18px] p-4 sm:p-6 text-stone-800 font-sans">
       <div className="max-w-5xl mx-auto space-y-6">
         
-        <header className="bg-white/90 backdrop-blur p-6 rounded-2xl border border-amber-200/60 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <header className="bg-white/95 backdrop-blur p-6 rounded-2xl border border-stone-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <img 
               src={logo} 
               alt="Logo" 
-              className="w-12 h-12 object-contain rounded-xl shadow-xs border border-amber-200 shrink-0" 
+              className="w-12 h-12 object-contain rounded-xl shadow-xs border border-stone-200 shrink-0" 
             />
             <div>
-              <button onClick={onBack} className="text-xs font-bold uppercase tracking-wider text-amber-700 hover:text-amber-900 transition mb-1 inline-flex items-center gap-1">
+              <button onClick={onBack} className="text-xs font-bold uppercase tracking-wider text-stone-500 hover:text-stone-800 transition mb-1 inline-flex items-center gap-1">
                 ← Retour au tableau de bord
               </button>
               <h1 className="text-2xl sm:text-3xl font-black text-stone-900 tracking-tight">
@@ -482,29 +481,29 @@ export default function LeagueView({ leagueId, onBack }) {
           </div>
 
           {leagueGlobalAverage && (
-            <div className="bg-gradient-to-br from-amber-600 to-orange-600 text-white p-3.5 rounded-xl text-center min-w-[130px] shadow-sm">
-              <div className="text-2xl font-black">{leagueGlobalAverage} <span className="text-sm font-normal text-amber-200">/ 5</span></div>
-              <div className="text-[10px] font-bold uppercase tracking-wider text-amber-100">Moyenne de la Ligue</div>
+            <div className="bg-stone-800 text-white p-3.5 rounded-xl text-center min-w-[130px] shadow-sm">
+              <div className="text-2xl font-black">{leagueGlobalAverage} <span className="text-sm font-normal text-stone-400">/ 5</span></div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-stone-300">Note globale du bureau</div>
             </div>
           )}
         </header>
 
-        {/* Pâtissier de la semaine */}
-        <div className="bg-gradient-to-r from-amber-500 to-orange-500 text-white p-5 rounded-2xl shadow-md flex items-center gap-4">
-          <div className="text-3xl bg-white/20 p-3 rounded-xl backdrop-blur-sm">👑</div>
+        {/* Cuisinier de la semaine */}
+        <div className="bg-[#EFECE6] border border-stone-300 text-stone-900 p-5 rounded-2xl shadow-sm flex items-center gap-4">
+          <div className="text-3xl bg-white/70 p-3 rounded-xl shadow-2xs backdrop-blur-sm">🍪</div>
           <div className="space-y-0.5">
-            <div className="text-xs font-bold uppercase tracking-wider text-amber-100">Pâtissier à l'honneur cette semaine</div>
+            <div className="text-xs font-bold uppercase tracking-wider text-stone-500">Cible de la semaine (ou Chef prodige)</div>
             <div className="text-base sm:text-lg font-bold">
               Semaine #{currentWeek} — C'est au tour de{' '}
-              <span className="underline decoration-amber-200 decoration-2 underline-offset-4">
-                {bakeMaster?.profiles?.username || 'un membre'}
-              </span> !
+              <span className="underline decoration-stone-400 decoration-2 underline-offset-4">
+                {bakeMaster?.profiles?.username || 'un collègue'}
+              </span> de nous régaler ! (Pas de pression 😇)
             </div>
           </div>
         </div>
 
         {message && (
-          <div className={`p-4 rounded-xl text-xs font-medium shadow-sm ${message.type === 'error' ? 'bg-red-100 text-red-800 border border-red-200' : 'bg-emerald-100 text-emerald-900 border border-emerald-200'}`}>
+          <div className={`p-4 rounded-xl text-xs font-medium shadow-sm ${message.type === 'error' ? 'bg-red-50 text-red-800 border border-red-200' : 'bg-emerald-50 text-emerald-900 border border-emerald-200'}`}>
             {message.text}
           </div>
         )}
@@ -512,21 +511,21 @@ export default function LeagueView({ leagueId, onBack }) {
         <div className="grid md:grid-cols-12 gap-6">
           
           <div className="md:col-span-5 space-y-6">
-            <div className="bg-white/90 backdrop-blur p-6 rounded-2xl border border-amber-200/60 shadow-md space-y-5">
+            <div className="bg-white/95 backdrop-blur p-6 rounded-2xl border border-stone-200 shadow-sm space-y-5">
               <div className="flex items-center justify-between">
                 <h2 className="text-xs font-black uppercase tracking-wider text-stone-900">
-                  ✨ Formulaire d'évaluation
+                  🎯 Noter la fournée
                 </h2>
                 <select
                   value={selectedWeekToRate}
                   onChange={(e) => setSelectedWeekToRate(Number(e.target.value))}
-                  className="bg-amber-50 border border-amber-200 text-xs font-bold text-amber-900 rounded-lg px-3 py-1.5 outline-none shadow-inner cursor-pointer"
+                  className="bg-[#F7F4EE] border border-stone-200 text-xs font-bold text-stone-800 rounded-lg px-3 py-1.5 outline-none shadow-inner cursor-pointer"
                 >
                   {fullSchedule
-                    .filter(s => s.week_number <= currentWeek) // Empêche de sélectionner une semaine future
+                    .filter(s => s.week_number <= currentWeek)
                     .map(s => (
                       <option key={s.week_number} value={s.week_number}>
-                        Semaine #{s.week_number} {s.week_number === currentWeek ? '(En cours)' : ''}
+                        Semaine #{s.week_number} {s.week_number === currentWeek ? '(Actuelle)' : ''}
                       </option>
                     ))
                   }
@@ -534,30 +533,30 @@ export default function LeagueView({ leagueId, onBack }) {
               </div>
 
               {selectedWeekToRate > currentWeek ? (
-                <div className="p-4 bg-amber-50/50 border border-amber-200/60 rounded-xl text-center space-y-1">
-                  <p className="text-xs font-bold text-amber-900">
-                    🕒 Semaine future non ouverte
+                <div className="p-4 bg-[#F7F4EE] border border-stone-200 rounded-xl text-center space-y-1">
+                  <p className="text-xs font-bold text-stone-800">
+                    🕒 Un peu de patience !
                   </p>
                   <p className="text-xs text-stone-600">
-                    Il n'est pas possible de voter en avance pour une semaine qui n'a pas encore démarré.
+                    Tu ne peux pas noter une semaine qui n'a pas encore commencé.
                   </p>
                 </div>
               ) : isSelfRating() ? (
-                <div className="p-4 bg-amber-50/50 border border-amber-200/60 rounded-xl text-center space-y-1">
-                  <p className="text-xs font-bold text-amber-900">
-                    🛡️ Auto-évaluation non autorisée
+                <div className="p-4 bg-[#F7F4EE] border border-stone-200 rounded-xl text-center space-y-1">
+                  <p className="text-xs font-bold text-stone-800">
+                    🕵️‍♂️ Auto-jugement interdit
                   </p>
                   <p className="text-xs text-stone-600">
-                    Vous étiez le pâtissier assigné pour la semaine #{selectedWeekToRate}. Seuls vos pairs peuvent noter votre création.
+                    C'était ton tour en Semaine #{selectedWeekToRate}. Laisse tes collègues juger ton chef-d'œuvre.
                   </p>
                 </div>
               ) : (
                 <form onSubmit={handleSubmitRating} className="space-y-4">
                   {CRITERIA.map((criterion) => (
-                    <div key={criterion.id} className="space-y-1.5 bg-amber-50/40 p-3.5 rounded-xl border border-amber-100 shadow-2xs">
+                    <div key={criterion.id} className="space-y-1.5 bg-[#FBF9F5] p-3.5 rounded-xl border border-stone-200/60 shadow-2xs">
                       <div className="flex items-center justify-between text-xs font-bold text-stone-900">
                         <span>{criterion.label}</span>
-                        <span className="font-mono text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded text-[11px]">{scores[criterion.id]} / 5</span>
+                        <span className="font-mono text-stone-700 bg-stone-100 px-2 py-0.5 rounded text-[11px]">{scores[criterion.id]} / 5</span>
                       </div>
                       <div className="flex items-center justify-between pt-1">
                         {[1, 2, 3, 4, 5].map((star) => (
@@ -565,54 +564,54 @@ export default function LeagueView({ leagueId, onBack }) {
                             key={star}
                             type="button"
                             onClick={() => setScores({ ...scores, [criterion.id]: star })}
-                            className={`text-xl transition-transform hover:scale-125 ${star <= scores[criterion.id] ? 'opacity-100 drop-shadow' : 'opacity-25 grayscale'}`}
+                            className={`text-xl transition-transform hover:scale-125 ${star <= scores[criterion.id] ? 'opacity-100 drop-shadow' : 'opacity-20 grayscale'}`}
                           >
-                            ⭐
+                            🍪
                           </button>
                         ))}
                       </div>
                     </div>
                   ))}
 
-                  <div className="bg-gradient-to-r from-stone-900 to-stone-800 text-white p-3.5 rounded-xl text-center flex items-center justify-between px-4 shadow-sm">
-                    <span className="text-xs font-bold uppercase tracking-wider text-amber-400">Note Finale attribuée</span>
+                  <div className="bg-stone-800 text-white p-3.5 rounded-xl text-center flex items-center justify-between px-4 shadow-sm">
+                    <span className="text-xs font-bold uppercase tracking-wider text-stone-300">Note du jury (Toi)</span>
                     <span className="text-xl font-black">{calculateAverage(scores)} <span className="text-xs text-stone-400 font-normal">/ 5</span></span>
                   </div>
 
                   <textarea
                     rows={3}
-                    placeholder="Laissez un commentaire gourmand..."
+                    placeholder="Un petit mot doux pour décrire ton expérience..."
                     value={comment}
                     onChange={(e) => setComment(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-amber-50/40 border border-amber-200/60 rounded-xl text-stone-900 text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 placeholder:text-stone-400 shadow-inner"
+                    className="w-full px-3.5 py-2.5 bg-[#FBF9F5] border border-stone-200 rounded-xl text-stone-900 text-xs focus:outline-none focus:ring-2 focus:ring-stone-400 placeholder:text-stone-400 shadow-inner"
                   />
 
                   <button
                     type="submit"
                     disabled={submitting}
-                    className="w-full bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white text-xs font-bold uppercase tracking-wider py-3.5 rounded-xl transition shadow-md"
+                    className="w-full bg-stone-800 hover:bg-stone-900 text-white text-xs font-bold uppercase tracking-wider py-3.5 rounded-xl transition shadow-md"
                   >
-                    {submitting ? 'Validation...' : "Valider mon évaluation 🎯"}
+                    {submitting ? 'Enregistrement...' : "Envoyer les notes 🎯"}
                   </button>
                 </form>
               )}
             </div>
 
             {/* Calendrier */}
-            <div className="bg-white/90 backdrop-blur p-6 rounded-2xl border border-amber-200/60 shadow-md space-y-3">
+            <div className="bg-white/95 backdrop-blur p-6 rounded-2xl border border-stone-200 shadow-sm space-y-3">
               <h3 className="text-xs font-black uppercase tracking-wider text-stone-900">
-                📅 Planning de la saison ({fullSchedule.length} sem.)
+                📅 Les prochains cuistots ({fullSchedule.length} sem.)
               </h3>
               <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
                 {fullSchedule.length === 0 ? (
-                  <p className="text-xs text-stone-400 italic text-center py-2">Aucun calendrier généré.</p>
+                  <p className="text-xs text-stone-400 italic text-center py-2">Le planning est vide pour l'instant.</p>
                 ) : (
                   fullSchedule.map((sched) => {
                     const isCurrent = sched.week_number === currentWeek
                     return (
-                      <div key={sched.id} className={`px-3.5 py-2.5 rounded-xl border text-xs flex items-center justify-between transition ${isCurrent ? 'bg-amber-100/90 border-amber-400 font-bold text-amber-950 shadow-xs' : 'bg-amber-50/30 border-amber-100 text-stone-700'}`}>
-                        <span>Semaine #{sched.week_number} {isCurrent && '🔥 (En cours)'}</span>
-                        <span className="font-semibold">{sched.profiles?.username || 'Membre'}</span>
+                      <div key={sched.id} className={`px-3.5 py-2.5 rounded-xl border text-xs flex items-center justify-between transition ${isCurrent ? 'bg-[#EFECE6] border-stone-400 font-bold text-stone-900 shadow-xs' : 'bg-[#FBF9F5] border-stone-200 text-stone-700'}`}>
+                        <span>Semaine #{sched.week_number} {isCurrent && '🔥 (C\'est le moment !)'}</span>
+                        <span className="font-semibold">{sched.profiles?.username || 'Collègue'}</span>
                       </div>
                     )
                   })
@@ -624,34 +623,34 @@ export default function LeagueView({ leagueId, onBack }) {
           <div className="md:col-span-7 space-y-6">
             
             {/* Classement */}
-            <div className="bg-white/90 backdrop-blur p-6 rounded-2xl border border-amber-200/60 shadow-md space-y-4">
+            <div className="bg-white/95 backdrop-blur p-6 rounded-2xl border border-stone-200 shadow-sm space-y-4">
               <h2 className="text-xs font-black uppercase tracking-wider text-stone-900">
-                🏆 Classement Général des Pâtissiers
+                🏆 Classement de l'openspace
               </h2>
               {leaderboard.length === 0 ? (
-                <p className="text-xs text-stone-400 italic py-6 text-center">Aucune note validée pour le moment. Le podium vous attend !</p>
+                <p className="text-xs text-stone-400 italic py-6 text-center">Aucune note validée pour l'instant. Personne n'a encore pris de risque en cuisine !</p>
               ) : (
                 <div className="space-y-3.5">
                   {leaderboard.map((entry, idx) => (
-                    <div key={entry.username} className="p-4 border border-amber-200/60 rounded-xl bg-gradient-to-r from-amber-50/40 to-orange-50/20 space-y-3 shadow-2xs">
+                    <div key={entry.username} className="p-4 border border-stone-200 rounded-xl bg-[#F7F4EE]/50 space-y-3 shadow-2xs">
                       <div className="flex justify-between items-center">
                         <div className="flex items-center gap-2.5 text-stone-900 text-xs font-bold">
-                          <span className={`w-6 h-6 rounded-full flex items-center justify-center font-mono text-xs shadow-xs ${idx === 0 ? 'bg-amber-400 text-amber-950 font-black' : idx === 1 ? 'bg-stone-300 text-stone-900 font-bold' : idx === 2 ? 'bg-amber-700/40 text-amber-950 font-bold' : 'bg-stone-100 text-stone-700'}`}>
+                          <span className={`w-6 h-6 rounded-full flex items-center justify-center font-mono text-xs shadow-xs ${idx === 0 ? 'bg-stone-800 text-white font-black' : idx === 1 ? 'bg-stone-300 text-stone-900 font-bold' : idx === 2 ? 'bg-stone-400 text-white font-bold' : 'bg-stone-100 text-stone-700'}`}>
                             {idx + 1}
                           </span>
                           <span className="text-sm">{entry.username}</span>
                         </div>
-                        <div className="bg-gradient-to-r from-amber-600 to-orange-600 text-white px-2.5 py-1 rounded-lg text-xs font-black shadow-2xs">
+                        <div className="bg-stone-800 text-white px-2.5 py-1 rounded-lg text-xs font-black shadow-2xs">
                           {entry.avgGlobal} / 5
                         </div>
                       </div>
 
                       {/* Détail par critères */}
-                      <div className="grid grid-cols-5 gap-1.5 pt-2 border-t border-amber-200/50 text-center">
+                      <div className="grid grid-cols-5 gap-1.5 pt-2 border-t border-stone-200 text-center">
                         {CRITERIA.map(crit => (
-                          <div key={crit.id} className="bg-white/80 p-1.5 rounded-lg border border-amber-100 shadow-2xs">
+                          <div key={crit.id} className="bg-white p-1.5 rounded-lg border border-stone-200/80 shadow-2xs">
                             <div className="text-[10px] font-bold text-stone-500 uppercase">{crit.label}</div>
-                            <div className="text-[11px] font-mono font-black text-amber-900 mt-0.5">
+                            <div className="text-[11px] font-mono font-black text-stone-800 mt-0.5">
                               {entry[crit.id]}
                             </div>
                           </div>
@@ -664,25 +663,25 @@ export default function LeagueView({ leagueId, onBack }) {
             </div>
 
             {/* Historique */}
-            <div className="bg-white/90 backdrop-blur p-6 rounded-2xl border border-amber-200/60 shadow-md space-y-4">
+            <div className="bg-white/95 backdrop-blur p-6 rounded-2xl border border-stone-200 shadow-sm space-y-4">
               <h2 className="text-xs font-black uppercase tracking-wider text-stone-900">
-                📜 Historique des dégustations passées
+                📜 Les archives de la machine à café (Historique)
               </h2>
               {filteredRatings.length === 0 ? (
-                <p className="text-xs text-stone-400 italic py-6 text-center">Aucun avis publié pour les semaines précédentes.</p>
+                <p className="text-xs text-stone-400 italic py-6 text-center">Rien à signaler pour les semaines passées.</p>
               ) : (
                 <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
                   {filteredRatings.map((item) => (
-                    <div key={item.id} className="p-4 border border-amber-100 rounded-xl bg-amber-50/20 space-y-2 shadow-2xs">
+                    <div key={item.id} className="p-4 border border-stone-200 rounded-xl bg-[#FBF9F5] space-y-2 shadow-2xs">
                       <div className="flex justify-between items-center text-xs text-stone-800">
                         <span className="font-bold">
-                          {item.profiles?.username} <span className="font-normal text-amber-800/80">(Semaine #{item.week_number || currentWeek})</span>
+                          {item.profiles?.username} <span className="font-normal text-stone-500">(Semaine #{item.week_number || currentWeek})</span>
                         </span>
-                        <span className="bg-amber-100 text-amber-950 px-2.5 py-0.5 rounded-md border border-amber-200 font-black">
+                        <span className="bg-stone-200 text-stone-800 px-2.5 py-0.5 rounded-md border border-stone-300 font-black">
                           {item.score} / 5
                         </span>
                       </div>
-                      {item.comment && <p className="text-xs text-stone-600 italic bg-white/60 p-2.5 rounded-lg border border-amber-100/50">"{item.comment}"</p>}
+                      {item.comment && <p className="text-xs text-stone-600 italic bg-white p-2.5 rounded-lg border border-stone-200/60">"{item.comment}"</p>}
                     </div>
                   ))}
                 </div>
