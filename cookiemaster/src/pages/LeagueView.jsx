@@ -48,6 +48,8 @@ export default function LeagueView({ leagueId, onBack }) {
   const fetchData = async () => {
     if (!leagueId) return
 
+    setLoading(true)
+
     // 1. Informations sur la ligue
     const { data: leagueData } = await supabase
       .from('leagues')
@@ -57,7 +59,7 @@ export default function LeagueView({ leagueId, onBack }) {
 
     if (leagueData) setLeague(leagueData)
 
-    // 2. Récupération robuste des membres et de leurs profils
+    // 2. Récupération des membres et de leurs profils
     const { data: membersData } = await supabase
       .from('league_members')
       .select('user_id')
@@ -90,15 +92,19 @@ export default function LeagueView({ leagueId, onBack }) {
       .order('week_number', { ascending: true })
 
     if (fullSchedData && fullSchedData.length > 0) {
-      const userIds = fullSchedData.map(s => s.assigned_user_id)
-      const { data: profilesData } = await supabase
-        .from('profiles')
-        .select('id, username')
-        .in('id', userIds)
+      const userIds = fullSchedData.map(s => s.assigned_user_id).filter(Boolean)
+      let profilesData = []
+      if (userIds.length > 0) {
+        const { data: profs } = await supabase
+          .from('profiles')
+          .select('id, username')
+          .in('id', userIds)
+        profilesData = profs || []
+      }
 
       const enrichedSchedule = fullSchedData.map(s => ({
         ...s,
-        profiles: profilesData?.find(p => p.id === s.assigned_user_id) || { username: 'Membre' }
+        profiles: profilesData.find(p => p.id === s.assigned_user_id) || { username: 'Membre' }
       }))
 
       setFullSchedule(enrichedSchedule)
@@ -117,15 +123,19 @@ export default function LeagueView({ leagueId, onBack }) {
       .order('created_at', { ascending: false })
 
     if (ratingsData && ratingsData.length > 0) {
-      const userIds = ratingsData.map(r => r.user_id || r.voter_id)
-      const { data: profilesData } = await supabase
-        .from('profiles')
-        .select('id, username')
-        .in('id', userIds)
+      const userIds = ratingsData.map(r => r.user_id || r.voter_id).filter(Boolean)
+      let profilesData = []
+      if (userIds.length > 0) {
+        const { data: profs } = await supabase
+          .from('profiles')
+          .select('id, username')
+          .in('id', userIds)
+        profilesData = profs || []
+      }
 
       const enrichedRatings = ratingsData.map(r => ({
         ...r,
-        profiles: profilesData?.find(p => p.id === (r.user_id || r.voter_id)) || { username: 'Membre' }
+        profiles: profilesData.find(p => p.id === (r.user_id || r.voter_id)) || { username: 'Membre' }
       }))
 
       setRatings(enrichedRatings)
@@ -149,11 +159,14 @@ export default function LeagueView({ leagueId, onBack }) {
       }
     } else {
       setRatings([])
+      setScores({ taste: 0, texture: 0, appearance: 0, baking: 0, indulgence: 0 })
+      setComment('')
     }
 
     setLoading(false)
   }
 
+  // Se déclenche à chaque changement d'utilisateur (connexion/déconnexion) ou de ligue
   useEffect(() => {
     fetchData()
 
@@ -169,7 +182,6 @@ export default function LeagueView({ leagueId, onBack }) {
     }
   }, [leagueId, currentWeek, user?.id, selectedWeekToRate])
 
-  // Génération du planning : Nombre de semaines = Nombre exact de membres
   const handleStartLeague = async () => {
     setMessage(null)
     setSubmitting(true)
@@ -253,11 +265,11 @@ export default function LeagueView({ leagueId, onBack }) {
 
     if (error) {
       setMessage({ type: 'error', text: `Erreur : ${error.message}` })
+      setSubmitting(false)
     } else {
-      setMessage({ type: 'success', text: "Évaluation enregistrée ! Vous pouvez la modifier à tout moment ci-dessous. 🍪" })
-      fetchData()
+      // Redirection automatique vers le hub après enregistrement réussi
+      if (onBack) onBack()
     }
-    setSubmitting(false)
   }
 
   const handleCopyCode = () => {
@@ -467,12 +479,12 @@ export default function LeagueView({ leagueId, onBack }) {
                   disabled={submitting}
                   className="w-full bg-amber-800 hover:bg-amber-900 text-white font-bold py-3 rounded-xl shadow-sm transition cursor-pointer text-sm"
                 >
-                  {submitting ? 'Enregistrement...' : "Enregistrer ou modifier l'évaluation"}
+                  {submitting ? 'Enregistrement...' : "Enregistrer et retourner au Hub"}
                 </button>
               </form>
             </div>
 
-            {/* Planning complet (exactement nb users semaines) */}
+            {/* Planning complet */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-100 space-y-3">
               <h3 className="text-base font-bold text-amber-950 flex items-center gap-2">
                 <span>📅</span> Planning de la saison ({fullSchedule.length} semaines)
@@ -520,4 +532,4 @@ export default function LeagueView({ leagueId, onBack }) {
       </div>
     </div>
   )
-} 
+}
