@@ -166,7 +166,6 @@ export default function LeagueView({ leagueId, onBack }) {
     setLoading(false)
   }
 
-  // Se déclenche à chaque changement d'utilisateur (connexion/déconnexion) ou de ligue
   useEffect(() => {
     fetchData()
 
@@ -267,7 +266,6 @@ export default function LeagueView({ leagueId, onBack }) {
       setMessage({ type: 'error', text: `Erreur : ${error.message}` })
       setSubmitting(false)
     } else {
-      // Redirection automatique vers le hub après enregistrement réussi
       if (onBack) onBack()
     }
   }
@@ -285,6 +283,46 @@ export default function LeagueView({ leagueId, onBack }) {
     if (selectedWeekFilter !== 'all' && rWeek !== Number(selectedWeekFilter)) return false
     return true
   })
+
+  // Calcul du classement basé sur les notes des semaines passées
+  const rankingMap = {}
+  filteredRatings.forEach(r => {
+    const weekNum = r.week_number || currentWeek
+    const scheduleItem = fullSchedule.find(s => s.week_number === weekNum)
+    const bakerId = scheduleItem?.assigned_user_id || r.user_id
+    const bakerName = scheduleItem?.profiles?.username || r.profiles?.username || 'Membre'
+
+    if (!rankingMap[bakerId]) {
+      rankingMap[bakerId] = {
+        username: bakerName,
+        totalScore: 0,
+        count: 0,
+        taste: 0,
+        texture: 0,
+        appearance: 0,
+        baking: 0,
+        indulgence: 0
+      }
+    }
+
+    rankingMap[bakerId].totalScore += Number(r.score || 0)
+    rankingMap[bakerId].taste += Number(r.taste || 0)
+    rankingMap[bakerId].texture += Number(r.texture || 0)
+    rankingMap[bakerId].appearance += Number(r.appearance || 0)
+    rankingMap[bakerId].baking += Number(r.baking || 0)
+    rankingMap[bakerId].indulgence += Number(r.indulgence || 0)
+    rankingMap[bakerId].count += 1
+  })
+
+  const leaderboard = Object.values(rankingMap).map(entry => ({
+    username: entry.username,
+    avgGlobal: (entry.totalScore / entry.count).toFixed(1),
+    taste: (entry.taste / entry.count).toFixed(1),
+    texture: (entry.texture / entry.count).toFixed(1),
+    appearance: (entry.appearance / entry.count).toFixed(1),
+    baking: (entry.baking / entry.count).toFixed(1),
+    indulgence: (entry.indulgence / entry.count).toFixed(1),
+  })).sort((a, b) => b.avgGlobal - a.avgGlobal)
 
   const leagueGlobalAverage = filteredRatings.length > 0
     ? (filteredRatings.reduce((acc, r) => acc + Number(r.score || 0), 0) / filteredRatings.length).toFixed(1)
@@ -507,25 +545,70 @@ export default function LeagueView({ leagueId, onBack }) {
             </div>
           </div>
 
-          <div className="md:col-span-7 bg-white p-6 rounded-2xl shadow-sm border border-amber-100 space-y-4 h-fit">
-            <h2 className="text-lg font-bold text-amber-950 flex items-center gap-2">
-              <span>💬</span> Historique des avis (publié après la semaine)
-            </h2>
-            {filteredRatings.length === 0 ? (
-              <p className="text-xs text-amber-800/70 italic py-6 text-center">Aucun avis publié pour le moment (les notes de la semaine en cours sont masquées jusqu'à dimanche minuit).</p>
-            ) : (
-              <div className="space-y-4">
-                {filteredRatings.map((item) => (
-                  <div key={item.id} className="p-4 rounded-xl border border-amber-100 bg-white space-y-2">
-                    <div className="flex justify-between items-center text-xs font-bold text-amber-950">
-                      <span>{item.profiles?.username} (Semaine #{item.week_number || currentWeek})</span>
-                      <span className="bg-amber-100 px-2 py-0.5 rounded">{item.score} ★</span>
+          <div className="md:col-span-7 space-y-6">
+            
+            {/* Classement de la ligue */}
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-100 space-y-4">
+              <h2 className="text-lg font-bold text-amber-950 flex items-center gap-2">
+                <span>🏅</span> Classement des Pâtissiers (Semaines passées)
+              </h2>
+              {leaderboard.length === 0 ? (
+                <p className="text-xs text-amber-800/70 italic py-4 text-center">Aucun classement disponible pour le moment.</p>
+              ) : (
+                <div className="space-y-3">
+                  {leaderboard.map((entry, idx) => (
+                    <div key={entry.username} className="p-4 rounded-xl border border-amber-100 bg-amber-50/30 space-y-3">
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-2 font-extrabold text-amber-950 text-sm">
+                          <span className="w-6 h-6 rounded-full bg-amber-200 text-amber-900 flex items-center justify-center text-xs">
+                            #{idx + 1}
+                          </span>
+                          <span>{entry.username}</span>
+                        </div>
+                        <div className="bg-amber-800 text-white px-2.5 py-1 rounded-lg text-xs font-black">
+                          {entry.avgGlobal} ★
+                        </div>
+                      </div>
+
+                      {/* Détail des catégories */}
+                      <div className="grid grid-cols-5 gap-1.5 pt-1 border-t border-amber-200/50 text-center">
+                        {CRITERIA.map(crit => (
+                          <div key={crit.id} className="bg-white p-1.5 rounded-lg border border-amber-100">
+                            <div className="text-[10px] text-amber-800/70">{crit.icon}</div>
+                            <div className="text-xs font-bold text-amber-950 mt-0.5">
+                              {entry[crit.id]}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    {item.comment && <p className="text-xs text-amber-900 italic">"{item.comment}"</p>}
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Historique des avis */}
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-100 space-y-4">
+              <h2 className="text-lg font-bold text-amber-950 flex items-center gap-2">
+                <span>💬</span> Historique des avis (publié après la semaine)
+              </h2>
+              {filteredRatings.length === 0 ? (
+                <p className="text-xs text-amber-800/70 italic py-6 text-center">Aucun avis publié pour le moment (les notes de la semaine en cours sont masquées jusqu'à dimanche minuit).</p>
+              ) : (
+                <div className="space-y-4 max-h-96 overflow-y-auto pr-1">
+                  {filteredRatings.map((item) => (
+                    <div key={item.id} className="p-4 rounded-xl border border-amber-100 bg-white space-y-2">
+                      <div className="flex justify-between items-center text-xs font-bold text-amber-950">
+                        <span>{item.profiles?.username} (Semaine #{item.week_number || currentWeek})</span>
+                        <span className="bg-amber-100 px-2 py-0.5 rounded">{item.score} ★</span>
+                      </div>
+                      {item.comment && <p className="text-xs text-amber-900 italic">"{item.comment}"</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
           </div>
 
         </div>
