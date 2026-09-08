@@ -179,7 +179,7 @@ export default function Hub({ onSelectLeague }) {
           <div className="flex items-center justify-between">
             <h2 className="text-xs font-black uppercase tracking-wider text-[#2A180C]">Vos ligues actives</h2>
             <span className="bg-[#EEDCC7] text-[#5C3A21] text-xs px-3 py-1 rounded-full font-bold border border-[#D9BFA8] shadow-2xs">
-              {userLeagues.length} ligues
+              {userLeagues.length} ligue(s)
             </span>
           </div>
 
