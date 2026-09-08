@@ -519,4 +519,4 @@ export default function LeagueView({ leagueId, onBack }) {
       </div>
     </div>
   )
-}
+} 
