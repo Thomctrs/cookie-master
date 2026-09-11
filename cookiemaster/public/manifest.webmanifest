@@ -1,0 +1,30 @@
+{
+  "name": "Cookie Challenge",
+  "short_name": "Cookie Challenge",
+  "description": "Ligue de cookies de l'openspace : notes, classements et badges entre collègues.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FFFBEB",
+  "theme_color": "#B45309",
+  "lang": "fr",
+  "icons": [
+    {
+      "src": "/icons-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
