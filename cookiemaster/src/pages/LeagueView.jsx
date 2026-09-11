@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
-import logo from '../logo/logo.PNG'
+import logo from '../logo/logo.webp'
 
 const CRITERIA = [
   { id: 'taste', label: 'Goût' },
@@ -51,156 +51,121 @@ export default function LeagueView({ leagueId, onBack }) {
 
     setLoading(true)
 
+    // Single read: 8 sequential queries collapsed into 1 embed.
     const { data: leagueData } = await supabase
       .from('leagues')
-      .select('*')
+      .select(`
+        *,
+        league_members (
+          user_id,
+          profiles ( id, username )
+        ),
+        league_schedule (
+          *,
+          profiles ( id, username )
+        ),
+        ratings (
+          *,
+          profiles!ratings_user_id_fkey ( id, username )
+        )
+      `)
       .eq('id', leagueId)
       .maybeSingle()
 
-    if (leagueData) setLeague(leagueData)
+    setLoading(false)
+    if (!leagueData) return
 
-    const { data: membersData } = await supabase
+    setLeague(leagueData)
+
+    const enrichedMembers = (leagueData.league_members || []).map(m => ({
+      user_id: m.user_id,
+      profiles: m.profiles || { username: 'Collègue mystère' }
+    }))
+    setLeagueMembers(enrichedMembers)
+
+    const enrichedSchedule = (leagueData.league_schedule || [])
+      .filter(s => s.year === currentYear)
+      .map(s => ({ ...s, profiles: s.profiles || { username: 'Collègue' } }))
+      .sort((a, b) => a.week_number - b.week_number)
+    setFullSchedule(enrichedSchedule)
+    setBakeMaster(enrichedSchedule.find(s => s.week_number === currentWeek) || null)
+
+    const enrichedRatings = (leagueData.ratings || []).map(r => ({
+      ...r,
+      profiles: r.profiles || { username: 'Collègue' }
+    }))
+    setRatings(enrichedRatings)
+
+    const existing = enrichedRatings.find(
+      r => (r.user_id === user?.id || r.voter_id === user?.id) && 
+           (r.week_number === selectedWeekToRate || (!r.week_number && selectedWeekToRate === currentWeek))
+    )
+    if (existing) {
+      setScores({
+        taste: existing.taste || 0,
+        texture: existing.texture || 0,
+        appearance: existing.appearance || 0,
+        baking: existing.baking || 0,
+        indulgence: existing.indulgence || 0
+      })
+      setComment(existing.comment || '')
+    } else {
+      setScores({ taste: 0, texture: 0, appearance: 0, baking: 0, indulgence: 0 })
+      setComment('')
+    }
+  }
+
+  const assignUnassignedMembers = async () => {
+    if (!leagueId) return
+
+    const { data: league } = await supabase
+      .from('leagues')
+      .select('status')
+      .eq('id', leagueId)
+      .maybeSingle()
+
+    if (!league || league.status !== 'active') return
+
+    const { data: members } = await supabase
       .from('league_members')
       .select('user_id')
       .eq('league_id', leagueId)
 
-    let enrichedMembers = []
-    if (membersData && membersData.length > 0) {
-      const userIds = membersData.map(m => m.user_id)
-      const { data: profilesData } = await supabase
-        .from('profiles')
-        .select('id, username')
-        .in('id', userIds)
-
-      enrichedMembers = membersData.map(m => {
-        const profile = profilesData?.find(p => p.id === m.user_id)
-        return {
-          user_id: m.user_id,
-          profiles: profile || { username: 'Collègue mystère' }
-        }
-      })
-    }
-    setLeagueMembers(enrichedMembers)
-
-    const { data: fullSchedData } = await supabase
+    const { data: sched } = await supabase
       .from('league_schedule')
-      .select('*')
+      .select('week_number, turn_order, assigned_user_id')
       .eq('league_id', leagueId)
       .eq('year', currentYear)
-      .order('week_number', { ascending: true })
 
-    let currentMasterItem = null
-    let currentSchedule = fullSchedData || []
+    const schedule = sched || []
+    const assigned = new Set(schedule.map(s => s.assigned_user_id))
+    const toAssign = (members || []).filter(m => !assigned.has(m.user_id))
 
-    if (leagueData?.status === 'active' && enrichedMembers.length > 0) {
-      const assignedUserIds = new Set(currentSchedule.map(s => s.assigned_user_id))
-      const unassignedMembers = enrichedMembers.filter(m => !assignedUserIds.has(m.user_id))
+    if (toAssign.length === 0) return
 
-      if (unassignedMembers.length > 0) {
-        const lastWeek = currentSchedule.length > 0 
-          ? Math.max(...currentSchedule.map(s => s.week_number)) 
-          : currentWeek - 1
+    const lastWeek = schedule.length > 0
+      ? Math.max(...schedule.map(s => s.week_number))
+      : currentWeek - 1
 
-        const newInserts = unassignedMembers.map((member, idx) => ({
-          league_id: leagueId,
-          week_number: lastWeek + 1 + idx,
-          year: currentYear,
-          assigned_user_id: member.user_id,
-          turn_order: currentSchedule.length + idx + 1
-        }))
-
-        const { data: insertedData, error: insertErr } = await supabase
-          .from('league_schedule')
-          .insert(newInserts)
-          .select()
-
-        if (!insertErr && insertedData) {
-          currentSchedule = [...currentSchedule, ...insertedData]
-        }
-      }
-    }
-
-    if (currentSchedule.length > 0) {
-      const userIds = currentSchedule.map(s => s.assigned_user_id).filter(Boolean)
-      let profilesData = []
-      if (userIds.length > 0) {
-        const { data: profs } = await supabase
-          .from('profiles')
-          .select('id, username')
-          .in('id', userIds)
-        profilesData = profs || []
-      }
-
-      const enrichedSchedule = currentSchedule.map(s => ({
-        ...s,
-        profiles: profilesData.find(p => p.id === s.assigned_user_id) || { username: 'Collègue' }
-      })).sort((a, b) => a.week_number - b.week_number)
-
-      setFullSchedule(enrichedSchedule)
-      currentMasterItem = enrichedSchedule.find(s => s.week_number === currentWeek)
-      setBakeMaster(currentMasterItem || null)
-    } else {
-      setFullSchedule([])
-      setBakeMaster(null)
-    }
-
-    const { data: ratingsData } = await supabase
-      .from('ratings')
-      .select('*')
-      .eq('league_id', leagueId)
-      .order('created_at', { ascending: false })
-
-    if (ratingsData && ratingsData.length > 0) {
-      const userIds = ratingsData.map(r => r.user_id || r.voter_id).filter(Boolean)
-      let profilesData = []
-      if (userIds.length > 0) {
-        const { data: profs } = await supabase
-          .from('profiles')
-          .select('id, username')
-          .in('id', userIds)
-        profilesData = profs || []
-      }
-
-      const enrichedRatings = ratingsData.map(r => ({
-        ...r,
-        profiles: profilesData.find(p => p.id === (r.user_id || r.voter_id)) || { username: 'Collègue' }
-      }))
-
-      setRatings(enrichedRatings)
-
-      const existing = enrichedRatings.find(
-        r => (r.user_id === user?.id || r.voter_id === user?.id) && 
-             (r.week_number === selectedWeekToRate || (!r.week_number && selectedWeekToRate === currentWeek))
-      )
-      if (existing) {
-        setScores({
-          taste: existing.taste || 0,
-          texture: existing.texture || 0,
-          appearance: existing.appearance || 0,
-          baking: existing.baking || 0,
-          indulgence: existing.indulgence || 0
-        })
-        setComment(existing.comment || '')
-      } else {
-        setScores({ taste: 0, texture: 0, appearance: 0, baking: 0, indulgence: 0 })
-        setComment('')
-      }
-    } else {
-      setRatings([])
-      setScores({ taste: 0, texture: 0, appearance: 0, baking: 0, indulgence: 0 })
-      setComment('')
-    }
-
-    setLoading(false)
+    await supabase
+      .from('league_schedule')
+      .insert(toAssign.map((member, idx) => ({
+        league_id: leagueId,
+        week_number: lastWeek + 1 + idx,
+        year: currentYear,
+        assigned_user_id: member.user_id,
+        turn_order: schedule.length + idx + 1
+      })))
   }
 
   useEffect(() => {
     fetchData()
+    assignUnassignedMembers()
 
     const channel = supabase
       .channel(`room-${leagueId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'leagues', filter: `id=eq.${leagueId}` }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'league_members', filter: `league_id=eq.${leagueId}` }, () => fetchData())
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'league_members', filter: `league_id=eq.${leagueId}` }, () => { assignUnassignedMembers(); fetchData() })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'league_schedule', filter: `league_id=eq.${leagueId}` }, () => fetchData())
       .subscribe()
 
@@ -277,11 +242,6 @@ export default function LeagueView({ leagueId, onBack }) {
     setMessage(null)
 
     const globalScore = Number(calculateAverage(scores))
-    const existingRating = ratings.find(
-      (r) => 
-        (r.user_id === user.id || r.voter_id === user.id) && 
-        (r.week_number === selectedWeekToRate || (!r.week_number && selectedWeekToRate === currentWeek))
-    )
 
     const payload = {
       league_id: leagueId,
@@ -297,14 +257,10 @@ export default function LeagueView({ leagueId, onBack }) {
       week_number: Number(selectedWeekToRate)
     }
 
-    let error = null
-    if (existingRating) {
-      const res = await supabase.from('ratings').update(payload).eq('id', existingRating.id)
-      error = res.error
-    } else {
-      const res = await supabase.from('ratings').insert([payload])
-      error = res.error
-    }
+    // Atomic: one vote per (voter, league, week). Unique index ratings_one_vote_week in DB.
+    const { error } = await supabase
+      .from('ratings')
+      .upsert([payload], { onConflict: 'voter_id,league_id,week_number' })
 
     if (error) {
       setMessage({ type: 'error', text: `Erreur : ${error.message}` })
@@ -489,11 +445,11 @@ export default function LeagueView({ leagueId, onBack }) {
         </header>
 
         {/* Cuisinier de la semaine */}
-        <div className="bg-gradient-to-r from-[#F5EBE1] via-[#FAF2EB] to-[#EEDCC7] border border-[#D9BFA8] text-[#3D2513] p-5 rounded-3xl shadow-xs flex items-center gap-4">
-          <div className="text-3xl bg-white/80 p-3 rounded-2xl shadow-2xs backdrop-blur-sm border border-[#D9BFA8] shrink-0">🍪</div>
-          <div className="space-y-0.5">
+        <div className="bg-gradient-to-r from-[#F5EBE1] via-[#FAF2EB] to-[#EEDCC7] border border-[#D9BFA8] text-[#3D2513] p-4 sm:p-5 rounded-3xl shadow-xs flex items-center gap-3 sm:gap-4">
+          <div className="text-2xl sm:text-3xl bg-white/80 p-2.5 sm:p-3 rounded-2xl shadow-2xs backdrop-blur-sm border border-[#D9BFA8] shrink-0">🍪</div>
+          <div className="space-y-0.5 min-w-0">
             <div className="text-xs font-bold uppercase tracking-wider text-[#8C6239]">Cible de la semaine (ou Chef prodige)</div>
-            <div className="text-base sm:text-lg font-bold text-[#2A180C]">
+            <div className="text-sm sm:text-lg font-bold text-[#2A180C] leading-snug">
               Semaine #{currentWeek} — C'est au tour de{' '}
               <span className="text-[#5C3A21] underline decoration-[#D48D47] decoration-2 underline-offset-4">
                 {bakeMaster?.profiles?.username || 'un collègue'}
@@ -512,14 +468,14 @@ export default function LeagueView({ leagueId, onBack }) {
           
           <div className="md:col-span-5 space-y-6">
             <div className="bg-white/95 backdrop-blur p-6 rounded-3xl border border-[#D9BFA8] shadow-sm space-y-5">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-xs font-black uppercase tracking-wider text-[#2A180C]">
                   🎯 Noter la fournée
                 </h2>
                 <select
                   value={selectedWeekToRate}
                   onChange={(e) => setSelectedWeekToRate(Number(e.target.value))}
-                  className="bg-[#FAF2EB] border border-[#D9BFA8] text-xs font-bold text-[#3D2513] rounded-xl px-3.5 py-2 outline-none shadow-inner cursor-pointer"
+                  className="bg-[#FAF2EB] border border-[#D9BFA8] text-xs font-bold text-[#3D2513] rounded-xl px-3 py-2 outline-none shadow-inner cursor-pointer max-w-full"
                 >
                   {fullSchedule
                     .filter(s => s.week_number <= currentWeek)

@@ -38,15 +38,8 @@ export const AuthProvider = ({ children }) => {
   }
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      const currentUser = session?.user ?? null
-      setUser(currentUser)
-      if (currentUser) {
-        fetchProfile(currentUser.id, currentUser.email)
-      }
-      setLoading(false)
-    })
-
+    // onAuthStateChange emits INITIAL_SESSION on subscribe (current session) then every
+    // change — getSession() would duplicate the initial fetchProfile. Single source.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       const currentUser = session?.user ?? null
       setUser(currentUser)

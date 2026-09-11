@@ -41,12 +41,12 @@ export default function App() {
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <button
             onClick={handleBackToHub}
-            className="flex items-center gap-2 font-black text-amber-950 text-lg hover:opacity-80 transition cursor-pointer"
+            className="flex items-center gap-2 font-black text-amber-950 text-base sm:text-lg hover:opacity-80 transition cursor-pointer min-w-0"
           >
-            <span>🍪</span> Cookie Challenge
+            <span className="shrink-0">🍪</span> <span className="truncate">Cookie Challenge</span>
           </button>
 
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
             <button
               onClick={() => setCurrentView('profile')}
               className={`px-3 py-1.5 rounded-xl font-bold text-xs transition cursor-pointer flex items-center gap-1.5 ${
@@ -54,8 +54,9 @@ export default function App() {
                   ? 'bg-amber-800 text-white'
                   : 'bg-amber-100 text-amber-900 hover:bg-amber-200'
               }`}
+              title="Profil"
             >
-              <span>⚙️</span> Mon Profil
+              <span>⚙️</span> <span className="hidden sm:inline">Mon Profil</span>
             </button>
 
             <button
@@ -63,7 +64,7 @@ export default function App() {
               className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 rounded-xl font-bold text-xs transition cursor-pointer"
               title="Se déconnecter"
             >
-              Déconnexion
+              <span className="sm:hidden">⏻</span><span className="hidden sm:inline">Déconnexion</span>
             </button>
           </div>
         </div>

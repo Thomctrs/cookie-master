@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
-import logo from '../logo/logo.PNG'
+import logo from '../logo/logo.webp'
 
 export default function Hub({ onSelectLeague }) {
   const { user } = useAuth()
@@ -54,18 +54,10 @@ export default function Hub({ onSelectLeague }) {
 
     const randomCode = Math.random().toString(36).substring(2, 8).toUpperCase()
 
-    const { data: newLeague, error: leagueError } = await supabase
-      .from('leagues')
-      .insert([
-        {
-          name: leagueName.trim(),
-          code: randomCode,
-          status: 'recruiting',
-          created_by: user.id
-        }
-      ])
-      .select()
-      .single()
+    const { data: newLeague, error: leagueError } = await supabase.rpc('create_league', {
+      p_name: leagueName.trim(),
+      p_code: randomCode
+    })
 
     if (leagueError) {
       setMessage({ type: 'error', text: `Erreur création : ${leagueError.message}` })
@@ -73,30 +65,32 @@ export default function Hub({ onSelectLeague }) {
       return
     }
 
-    const { error: memberError } = await supabase
-      .from('league_members')
-      .insert([
-        {
-          league_id: newLeague.id,
-          user_id: user.id
-        }
-      ])
-
-    if (memberError) {
-      setMessage({ type: 'error', text: `Erreur ajout membre : ${memberError.message}` })
-    } else {
-      setLeagueName('')
-      await fetchUserLeagues()
-      onSelectLeague(newLeague.id)
-    }
+    setLeagueName('')
+    if (newLeague?.id) onSelectLeague(newLeague.id)
     setSubmitting(false)
   }
 
-  const handleJoinLeague = async () => {
-    // action de code inchangée
-  }
+  const handleJoinLeague = async (e) => {
+    e.preventDefault()
+    if (!leagueCode.trim() || !user) return
 
-  // ... (Garde tes fonctions existantes handleJoinLeague, etc.)
+    setSubmitting(true)
+    setMessage(null)
+
+    const { data: leagueId, error } = await supabase.rpc('join_league', {
+      p_code: leagueCode.trim().toUpperCase()
+    })
+
+    if (error) {
+      setMessage({ type: 'error', text: `Erreur : ${error.message}` })
+      setSubmitting(false)
+      return
+    }
+
+    setLeagueCode('')
+    if (leagueId && onSelectLeague) onSelectLeague(leagueId)
+    setSubmitting(false)
+  }
 
   return (
     <div className="min-h-screen bg-[#FDF8F2] bg-[radial-gradient(#E8D8C4_1px,transparent_1px)] [background-size:18px_18px] p-4 sm:p-6 text-[#3D2513] font-sans">

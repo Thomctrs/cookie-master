@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
-import logo from '../logo/logo.PNG'
+import logo from '../logo/logo.webp'
 
 export default function Auth() {
   const [loading, setLoading] = useState(false)
@@ -62,12 +62,11 @@ export default function Auth() {
         
         {/* LOGO EN GROS AU DÉBUT */}
         <div className="flex flex-col items-center justify-center space-y-3 text-center">
-          <div className="relative group">
-            <div className="absolute -inset-1 bg-gradient-to-r from-amber-500 to-orange-500 rounded-2xl blur opacity-30 group-hover:opacity-75 transition duration-300"></div>
+          <div className="relative">
             <img 
               src={logo} 
               alt="Logo de la ligue" 
-              className="relative w-24 h-24 sm:w-28 sm:h-28 object-contain rounded-2xl bg-white p-2 shadow-md border border-amber-200 transform transition group-hover:scale-105" 
+              className="relative w-24 h-24 sm:w-28 sm:h-28 object-contain rounded-2xl bg-white p-2 shadow-md border border-amber-200" 
             />
           </div>
           <div>
