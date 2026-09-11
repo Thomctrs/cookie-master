@@ -51,112 +51,68 @@ export default function LeagueView({ leagueId, onBack }) {
 
     setLoading(true)
 
-    const [leagueRes, membersRes, schedRes, ratingsRes] = await Promise.all([
-      supabase.from('leagues').select('*').eq('id', leagueId).maybeSingle(),
-      supabase.from('league_members').select('user_id').eq('league_id', leagueId),
-      supabase.from('league_schedule')
-        .select('*')
-        .eq('league_id', leagueId)
-        .eq('year', currentYear)
-        .order('week_number', { ascending: true }),
-      supabase.from('ratings')
-        .select('*')
-        .eq('league_id', leagueId)
-        .order('created_at', { ascending: false })
-    ])
+    // Single read: 8 sequential queries collapsed into 1 embed.
+    const { data: leagueData } = await supabase
+      .from('leagues')
+      .select(`
+        *,
+        league_members (
+          user_id,
+          profiles ( id, username )
+        ),
+        league_schedule (
+          *,
+          profiles ( id, username )
+        ),
+        ratings (
+          *,
+          profiles!ratings_user_id_fkey ( id, username )
+        )
+      `)
+      .eq('id', leagueId)
+      .maybeSingle()
 
-    const leagueData = leagueRes.data
-    if (leagueData) setLeague(leagueData)
+    setLoading(false)
+    if (!leagueData) return
 
-    let enrichedMembers = []
-    const membersData = membersRes.data
-    if (membersData && membersData.length > 0) {
-      const userIds = membersData.map(m => m.user_id)
-      const { data: profilesData } = await supabase
-        .from('profiles')
-        .select('id, username')
-        .in('id', userIds)
+    setLeague(leagueData)
 
-      enrichedMembers = membersData.map(m => {
-        const profile = profilesData?.find(p => p.id === m.user_id)
-        return {
-          user_id: m.user_id,
-          profiles: profile || { username: 'Collègue mystère' }
-        }
-      })
-    }
+    const enrichedMembers = (leagueData.league_members || []).map(m => ({
+      user_id: m.user_id,
+      profiles: m.profiles || { username: 'Collègue mystère' }
+    }))
     setLeagueMembers(enrichedMembers)
 
-    let currentMasterItem = null
-    let currentSchedule = schedRes.data || []
+    const enrichedSchedule = (leagueData.league_schedule || [])
+      .filter(s => s.year === currentYear)
+      .map(s => ({ ...s, profiles: s.profiles || { username: 'Collègue' } }))
+      .sort((a, b) => a.week_number - b.week_number)
+    setFullSchedule(enrichedSchedule)
+    setBakeMaster(enrichedSchedule.find(s => s.week_number === currentWeek) || null)
 
-    if (currentSchedule.length > 0) {
-      const userIds = currentSchedule.map(s => s.assigned_user_id).filter(Boolean)
-      let profilesData = []
-      if (userIds.length > 0) {
-        const { data: profs } = await supabase
-          .from('profiles')
-          .select('id, username')
-          .in('id', userIds)
-        profilesData = profs || []
-      }
+    const enrichedRatings = (leagueData.ratings || []).map(r => ({
+      ...r,
+      profiles: r.profiles || { username: 'Collègue' }
+    }))
+    setRatings(enrichedRatings)
 
-      const enrichedSchedule = currentSchedule.map(s => ({
-        ...s,
-        profiles: profilesData.find(p => p.id === s.assigned_user_id) || { username: 'Collègue' }
-      })).sort((a, b) => a.week_number - b.week_number)
-
-      setFullSchedule(enrichedSchedule)
-      currentMasterItem = enrichedSchedule.find(s => s.week_number === currentWeek)
-      setBakeMaster(currentMasterItem || null)
+    const existing = enrichedRatings.find(
+      r => (r.user_id === user?.id || r.voter_id === user?.id) && 
+           (r.week_number === selectedWeekToRate || (!r.week_number && selectedWeekToRate === currentWeek))
+    )
+    if (existing) {
+      setScores({
+        taste: existing.taste || 0,
+        texture: existing.texture || 0,
+        appearance: existing.appearance || 0,
+        baking: existing.baking || 0,
+        indulgence: existing.indulgence || 0
+      })
+      setComment(existing.comment || '')
     } else {
-      setFullSchedule([])
-      setBakeMaster(null)
-    }
-
-    const ratingsData = ratingsRes.data
-    if (ratingsData && ratingsData.length > 0) {
-      const userIds = ratingsData.map(r => r.user_id || r.voter_id).filter(Boolean)
-      let profilesData = []
-      if (userIds.length > 0) {
-        const { data: profs } = await supabase
-          .from('profiles')
-          .select('id, username')
-          .in('id', userIds)
-        profilesData = profs || []
-      }
-
-      const enrichedRatings = ratingsData.map(r => ({
-        ...r,
-        profiles: profilesData.find(p => p.id === (r.user_id || r.voter_id)) || { username: 'Collègue' }
-      }))
-
-      setRatings(enrichedRatings)
-
-      const existing = enrichedRatings.find(
-        r => (r.user_id === user?.id || r.voter_id === user?.id) && 
-             (r.week_number === selectedWeekToRate || (!r.week_number && selectedWeekToRate === currentWeek))
-      )
-      if (existing) {
-        setScores({
-          taste: existing.taste || 0,
-          texture: existing.texture || 0,
-          appearance: existing.appearance || 0,
-          baking: existing.baking || 0,
-          indulgence: existing.indulgence || 0
-        })
-        setComment(existing.comment || '')
-      } else {
-        setScores({ taste: 0, texture: 0, appearance: 0, baking: 0, indulgence: 0 })
-        setComment('')
-      }
-    } else {
-      setRatings([])
       setScores({ taste: 0, texture: 0, appearance: 0, baking: 0, indulgence: 0 })
       setComment('')
     }
-
-    setLoading(false)
   }
 
   const assignUnassignedMembers = async () => {
