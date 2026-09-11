@@ -1,0 +1,1 @@
+create policy "leagues_create" on public.leagues

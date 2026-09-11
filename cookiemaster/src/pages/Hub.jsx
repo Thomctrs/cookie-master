@@ -54,18 +54,10 @@ export default function Hub({ onSelectLeague }) {
 
     const randomCode = Math.random().toString(36).substring(2, 8).toUpperCase()
 
-    const { data: newLeague, error: leagueError } = await supabase
-      .from('leagues')
-      .insert([
-        {
-          name: leagueName.trim(),
-          code: randomCode,
-          status: 'recruiting',
-          created_by: user.id
-        }
-      ])
-      .select()
-      .single()
+    const { data: newLeague, error: leagueError } = await supabase.rpc('create_league', {
+      p_name: leagueName.trim(),
+      p_code: randomCode
+    })
 
     if (leagueError) {
       setMessage({ type: 'error', text: `Erreur création : ${leagueError.message}` })
@@ -73,22 +65,9 @@ export default function Hub({ onSelectLeague }) {
       return
     }
 
-    const { error: memberError } = await supabase
-      .from('league_members')
-      .insert([
-        {
-          league_id: newLeague.id,
-          user_id: user.id
-        }
-      ])
-
-    if (memberError) {
-      setMessage({ type: 'error', text: `Erreur ajout membre : ${memberError.message}` })
-    } else {
-      setLeagueName('')
-      await fetchUserLeagues()
-      onSelectLeague(newLeague.id)
-    }
+    setLeagueName('')
+    await fetchUserLeagues()
+    if (newLeague?.id) onSelectLeague(newLeague.id)
     setSubmitting(false)
   }
 
