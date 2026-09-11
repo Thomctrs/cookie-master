@@ -38,14 +38,20 @@ export const AuthProvider = ({ children }) => {
   }
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      const currentUser = session?.user ?? null
-      setUser(currentUser)
-      if (currentUser) {
-        fetchProfile(currentUser.id, currentUser.email)
-      }
-      setLoading(false)
-    })
+    supabase.auth
+      .getSession()
+      .then(({ data: { session } }) => {
+        const currentUser = session?.user ?? null
+        setUser(currentUser)
+        if (currentUser) {
+          fetchProfile(currentUser.id, currentUser.email)
+        }
+        setLoading(false)
+      })
+      .catch((err) => {
+        console.error('Erreur récupération session :', err.message)
+        setLoading(false)
+      })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       const currentUser = session?.user ?? null
