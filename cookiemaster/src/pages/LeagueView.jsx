@@ -51,20 +51,25 @@ export default function LeagueView({ leagueId, onBack }) {
 
     setLoading(true)
 
-    const { data: leagueData } = await supabase
-      .from('leagues')
-      .select('*')
-      .eq('id', leagueId)
-      .maybeSingle()
+    const [leagueRes, membersRes, schedRes, ratingsRes] = await Promise.all([
+      supabase.from('leagues').select('*').eq('id', leagueId).maybeSingle(),
+      supabase.from('league_members').select('user_id').eq('league_id', leagueId),
+      supabase.from('league_schedule')
+        .select('*')
+        .eq('league_id', leagueId)
+        .eq('year', currentYear)
+        .order('week_number', { ascending: true }),
+      supabase.from('ratings')
+        .select('*')
+        .eq('league_id', leagueId)
+        .order('created_at', { ascending: false })
+    ])
 
+    const leagueData = leagueRes.data
     if (leagueData) setLeague(leagueData)
 
-    const { data: membersData } = await supabase
-      .from('league_members')
-      .select('user_id')
-      .eq('league_id', leagueId)
-
     let enrichedMembers = []
+    const membersData = membersRes.data
     if (membersData && membersData.length > 0) {
       const userIds = membersData.map(m => m.user_id)
       const { data: profilesData } = await supabase
@@ -82,43 +87,8 @@ export default function LeagueView({ leagueId, onBack }) {
     }
     setLeagueMembers(enrichedMembers)
 
-    const { data: fullSchedData } = await supabase
-      .from('league_schedule')
-      .select('*')
-      .eq('league_id', leagueId)
-      .eq('year', currentYear)
-      .order('week_number', { ascending: true })
-
     let currentMasterItem = null
-    let currentSchedule = fullSchedData || []
-
-    if (leagueData?.status === 'active' && enrichedMembers.length > 0) {
-      const assignedUserIds = new Set(currentSchedule.map(s => s.assigned_user_id))
-      const unassignedMembers = enrichedMembers.filter(m => !assignedUserIds.has(m.user_id))
-
-      if (unassignedMembers.length > 0) {
-        const lastWeek = currentSchedule.length > 0 
-          ? Math.max(...currentSchedule.map(s => s.week_number)) 
-          : currentWeek - 1
-
-        const newInserts = unassignedMembers.map((member, idx) => ({
-          league_id: leagueId,
-          week_number: lastWeek + 1 + idx,
-          year: currentYear,
-          assigned_user_id: member.user_id,
-          turn_order: currentSchedule.length + idx + 1
-        }))
-
-        const { data: insertedData, error: insertErr } = await supabase
-          .from('league_schedule')
-          .insert(newInserts)
-          .select()
-
-        if (!insertErr && insertedData) {
-          currentSchedule = [...currentSchedule, ...insertedData]
-        }
-      }
-    }
+    let currentSchedule = schedRes.data || []
 
     if (currentSchedule.length > 0) {
       const userIds = currentSchedule.map(s => s.assigned_user_id).filter(Boolean)
@@ -144,12 +114,7 @@ export default function LeagueView({ leagueId, onBack }) {
       setBakeMaster(null)
     }
 
-    const { data: ratingsData } = await supabase
-      .from('ratings')
-      .select('*')
-      .eq('league_id', leagueId)
-      .order('created_at', { ascending: false })
-
+    const ratingsData = ratingsRes.data
     if (ratingsData && ratingsData.length > 0) {
       const userIds = ratingsData.map(r => r.user_id || r.voter_id).filter(Boolean)
       let profilesData = []
@@ -194,13 +159,57 @@ export default function LeagueView({ leagueId, onBack }) {
     setLoading(false)
   }
 
+  const assignUnassignedMembers = async () => {
+    if (!leagueId) return
+
+    const { data: league } = await supabase
+      .from('leagues')
+      .select('status')
+      .eq('id', leagueId)
+      .maybeSingle()
+
+    if (!league || league.status !== 'active') return
+
+    const { data: members } = await supabase
+      .from('league_members')
+      .select('user_id')
+      .eq('league_id', leagueId)
+
+    const { data: sched } = await supabase
+      .from('league_schedule')
+      .select('week_number, turn_order, assigned_user_id')
+      .eq('league_id', leagueId)
+      .eq('year', currentYear)
+
+    const schedule = sched || []
+    const assigned = new Set(schedule.map(s => s.assigned_user_id))
+    const toAssign = (members || []).filter(m => !assigned.has(m.user_id))
+
+    if (toAssign.length === 0) return
+
+    const lastWeek = schedule.length > 0
+      ? Math.max(...schedule.map(s => s.week_number))
+      : currentWeek - 1
+
+    await supabase
+      .from('league_schedule')
+      .insert(toAssign.map((member, idx) => ({
+        league_id: leagueId,
+        week_number: lastWeek + 1 + idx,
+        year: currentYear,
+        assigned_user_id: member.user_id,
+        turn_order: schedule.length + idx + 1
+      })))
+  }
+
   useEffect(() => {
     fetchData()
+    assignUnassignedMembers()
 
     const channel = supabase
       .channel(`room-${leagueId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'leagues', filter: `id=eq.${leagueId}` }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'league_members', filter: `league_id=eq.${leagueId}` }, () => fetchData())
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'league_members', filter: `league_id=eq.${leagueId}` }, () => { assignUnassignedMembers(); fetchData() })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'league_schedule', filter: `league_id=eq.${leagueId}` }, () => fetchData())
       .subscribe()
 
