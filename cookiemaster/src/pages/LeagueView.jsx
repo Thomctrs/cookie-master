@@ -489,11 +489,11 @@ export default function LeagueView({ leagueId, onBack }) {
         </header>
 
         {/* Cuisinier de la semaine */}
-        <div className="bg-gradient-to-r from-[#F5EBE1] via-[#FAF2EB] to-[#EEDCC7] border border-[#D9BFA8] text-[#3D2513] p-5 rounded-3xl shadow-xs flex items-center gap-4">
-          <div className="text-3xl bg-white/80 p-3 rounded-2xl shadow-2xs backdrop-blur-sm border border-[#D9BFA8] shrink-0">🍪</div>
-          <div className="space-y-0.5">
+        <div className="bg-gradient-to-r from-[#F5EBE1] via-[#FAF2EB] to-[#EEDCC7] border border-[#D9BFA8] text-[#3D2513] p-4 sm:p-5 rounded-3xl shadow-xs flex items-center gap-3 sm:gap-4">
+          <div className="text-2xl sm:text-3xl bg-white/80 p-2.5 sm:p-3 rounded-2xl shadow-2xs backdrop-blur-sm border border-[#D9BFA8] shrink-0">🍪</div>
+          <div className="space-y-0.5 min-w-0">
             <div className="text-xs font-bold uppercase tracking-wider text-[#8C6239]">Cible de la semaine (ou Chef prodige)</div>
-            <div className="text-base sm:text-lg font-bold text-[#2A180C]">
+            <div className="text-sm sm:text-lg font-bold text-[#2A180C] leading-snug">
               Semaine #{currentWeek} — C'est au tour de{' '}
               <span className="text-[#5C3A21] underline decoration-[#D48D47] decoration-2 underline-offset-4">
                 {bakeMaster?.profiles?.username || 'un collègue'}
@@ -512,14 +512,14 @@ export default function LeagueView({ leagueId, onBack }) {
           
           <div className="md:col-span-5 space-y-6">
             <div className="bg-white/95 backdrop-blur p-6 rounded-3xl border border-[#D9BFA8] shadow-sm space-y-5">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-xs font-black uppercase tracking-wider text-[#2A180C]">
                   🎯 Noter la fournée
                 </h2>
                 <select
                   value={selectedWeekToRate}
                   onChange={(e) => setSelectedWeekToRate(Number(e.target.value))}
-                  className="bg-[#FAF2EB] border border-[#D9BFA8] text-xs font-bold text-[#3D2513] rounded-xl px-3.5 py-2 outline-none shadow-inner cursor-pointer"
+                  className="bg-[#FAF2EB] border border-[#D9BFA8] text-xs font-bold text-[#3D2513] rounded-xl px-3 py-2 outline-none shadow-inner cursor-pointer max-w-full"
                 >
                   {fullSchedule
                     .filter(s => s.week_number <= currentWeek)
