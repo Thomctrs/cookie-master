@@ -66,7 +66,6 @@ export default function Hub({ onSelectLeague }) {
     }
 
     setLeagueName('')
-    await fetchUserLeagues()
     if (newLeague?.id) onSelectLeague(newLeague.id)
     setSubmitting(false)
   }
@@ -89,7 +88,6 @@ export default function Hub({ onSelectLeague }) {
     }
 
     setLeagueCode('')
-    await fetchUserLeagues()
     if (leagueId && onSelectLeague) onSelectLeague(leagueId)
     setSubmitting(false)
   }
