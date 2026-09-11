@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
-import logo from '../logo/logo.PNG'
+import logo from '../logo/logo.webp'
 
 export default function Hub({ onSelectLeague }) {
   const { user } = useAuth()

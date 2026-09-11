@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
-import logo from '../logo/logo.PNG'
+import logo from '../logo/logo.webp'
 
 export default function Auth() {
   const [loading, setLoading] = useState(false)
