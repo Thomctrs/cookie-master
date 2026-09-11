@@ -235,18 +235,18 @@ begin
     where code = upper(p_code);
 
   if not found then
-    raise exception 'code introuvable';
+    raise exception 'Code introuvable. Vérifie le code partagé par tes collègues.';
   end if;
 
   if v_league.status <> 'recruiting' then
-    raise exception 'ligue deja lancee';
+    raise exception 'Cette ligue est déjà lancée, la porte des fourneaux est fermée.';
   end if;
 
   if exists (
     select 1 from public.league_members
     where league_id = v_league.id and user_id = auth.uid()
   ) then
-    raise exception 'deja membre';
+    raise exception 'Tu es déjà dans cette équipe de gourmands !';
   end if;
 
   insert into public.league_members (league_id, user_id)
@@ -273,7 +273,7 @@ declare
   v_row public.leagues%rowtype;
 begin
   if p_name is null or trim(p_name) = '' then
-    raise exception 'nom requis';
+    raise exception 'Il faut un nom pour cette ligue !';
   end if;
 
   insert into public.leagues (name, code, status, created_by)

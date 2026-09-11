@@ -14,7 +14,7 @@ declare
   v_row public.leagues%rowtype;
 begin
   if p_name is null or trim(p_name) = '' then
-    raise exception 'nom requis';
+    raise exception 'Il faut un nom pour cette ligue !';
   end if;
 
   insert into public.leagues (name, code, status, created_by)
