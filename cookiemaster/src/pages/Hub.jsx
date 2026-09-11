@@ -92,11 +92,28 @@ export default function Hub({ onSelectLeague }) {
     setSubmitting(false)
   }
 
-  const handleJoinLeague = async () => {
-    // action de code inchangée
-  }
+  const handleJoinLeague = async (e) => {
+    e.preventDefault()
+    if (!leagueCode.trim() || !user) return
 
-  // ... (Garde tes fonctions existantes handleJoinLeague, etc.)
+    setSubmitting(true)
+    setMessage(null)
+
+    const { data: leagueId, error } = await supabase.rpc('join_league', {
+      p_code: leagueCode.trim().toUpperCase()
+    })
+
+    if (error) {
+      setMessage({ type: 'error', text: `Erreur : ${error.message}` })
+      setSubmitting(false)
+      return
+    }
+
+    setLeagueCode('')
+    await fetchUserLeagues()
+    if (leagueId && onSelectLeague) onSelectLeague(leagueId)
+    setSubmitting(false)
+  }
 
   return (
     <div className="min-h-screen bg-[#FDF8F2] bg-[radial-gradient(#E8D8C4_1px,transparent_1px)] [background-size:18px_18px] p-4 sm:p-6 text-[#3D2513] font-sans">
