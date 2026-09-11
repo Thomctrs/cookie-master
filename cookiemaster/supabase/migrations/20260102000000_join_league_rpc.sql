@@ -39,12 +39,3 @@ $$;
 
 revoke all on function public.join_league(text) from public;
 grant execute on function public.join_league(text) to authenticated;
-
--- Membership inserts now creator-only (their own league). Joins go through join_league().
-drop policy if exists "league_members_join_self" on public.league_members;
-create policy "league_members_add_creator" on public.league_members
-  for insert to authenticated
-  with check (
-    user_id = auth.uid()
-    and league_id in (select id from public.leagues where created_by = auth.uid())
-  );

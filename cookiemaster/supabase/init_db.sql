@@ -58,11 +58,9 @@ create table if not exists public.ratings (
   comment text,
   created_at timestamptz not null default now()
 );
--- RLS + policies: close trust boundary.
--- Apply via Supabase dashboard SQL editor, or `supabase db push` once project linked.
--- All client queries run as the logged-in user (anon key + JWT), so `authenticated` role grants.
--- Drops the permissive auto-policies the dashboard "Enable RLS" UI creates (they OR with ours
--- and would otherwise keep reads open to everyone).
+-- RLS: final canonical state. Defines the SECURITY DEFINER helper first, then every
+-- policy routes through it (or self-checks). No policy subqueries another table, so no
+-- recursion. This is the single source of truth; fresh init_db.sql applies it once.
 
 alter table public.profiles enable row level security;
 alter table public.leagues enable row level security;
@@ -70,7 +68,8 @@ alter table public.league_members enable row level security;
 alter table public.league_schedule enable row level security;
 alter table public.ratings enable row level security;
 
--- Drop Supabase dashboard auto-policies (select-all / insert-authenticated / email / user_id based).
+-- Drop any Supabase dashboard auto-policies (select-all / insert-authenticated / email
+-- / user_id based) and any stale fragment from earlier policy generations.
 do $$
 declare t text;
 begin
@@ -79,85 +78,106 @@ begin
     execute format('drop policy if exists "Enable insert for authenticated users only" on public.%I', t);
     execute format('drop policy if exists "Enable update for users based on email" on public.%I', t);
     execute format('drop policy if exists "Enable delete for users based on user_id" on public.%I', t);
+    execute format('drop policy if exists "profiles_select" on public.%I', t);
+    execute format('drop policy if exists "profiles_self_manage" on public.%I', t);
+    execute format('drop policy if exists "leagues_member_select" on public.%I', t);
+    execute format('drop policy if exists "leagues_create" on public.%I', t);
+    execute format('drop policy if exists "leagues_creator_update" on public.%I', t);
+    execute format('drop policy if exists "league_members_select" on public.%I', t);
+    execute format('drop policy if exists "league_members_join_self" on public.%I', t);
+    execute format('drop policy if exists "league_members_add_creator" on public.%I', t);
+    execute format('drop policy if exists "league_members_leave" on public.%I', t);
+    execute format('drop policy if exists "league_schedule_member_read" on public.%I', t);
+    execute format('drop policy if exists "league_schedule_member_insert" on public.%I', t);
+    execute format('drop policy if exists "league_schedule_creator_delete" on public.%I', t);
+    execute format('drop policy if exists "ratings_member_read" on public.%I', t);
+    execute format('drop policy if exists "ratings_vote" on public.%I', t);
+    execute format('drop policy if exists "ratings_update_own" on public.%I', t);
   end loop;
 end $$;
 
+-- Helper: is auth.uid() a member OR creator of this league? SECURITY DEFINER (owner) ->
+-- not subject to RLS on the tables it reads -> no policy re-entry -> no recursion cycles.
+create or replace function public.is_league_member(p_league_id uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.league_members lm
+     where lm.league_id = p_league_id and lm.user_id = auth.uid()
+  )
+  or exists (
+    select 1 from public.leagues l
+     where l.id = p_league_id and l.created_by = auth.uid()
+  );
+$$;
+
+revoke all on function public.is_league_member(uuid) from public;
+grant execute on function public.is_league_member(uuid) to authenticated;
+
 -- profiles: any logged-in user may read usernames (leaderboards); only self can write.
-drop policy if exists "profiles_select" on public.profiles;
 create policy "profiles_select" on public.profiles
   for select to authenticated
   using (true);
 
-drop policy if exists "profiles_self_manage" on public.profiles;
 create policy "profiles_self_manage" on public.profiles
   for all to authenticated
   using (id = auth.uid())
   with check (id = auth.uid());
 
--- leagues: visible only to members, writable only by creator.
-drop policy if exists "leagues_member_select" on public.leagues;
+-- leagues: read if member OR creator, writable only by creator.
 create policy "leagues_member_select" on public.leagues
   for select to authenticated
-  using (id in (select league_id from public.league_members where user_id = auth.uid()));
+  using (public.is_league_member(id));
 
-drop policy if exists "leagues_create" on public.leagues;
 create policy "leagues_create" on public.leagues
   for insert to authenticated
   with check (created_by = auth.uid());
 
-drop policy if exists "leagues_creator_update" on public.leagues;
 create policy "leagues_creator_update" on public.leagues
   for update to authenticated
   using (created_by = auth.uid())
   with check (created_by = auth.uid());
 
--- league_members: see roster if member/creator, join only yourself, leave yourself.
-drop policy if exists "league_members_select" on public.league_members;
+-- league_members: members may read/leave; creator may add members (pre-launch roster).
+-- Joining by code goes through join_league() RPC only (recruiting check + dedupe there).
 create policy "league_members_select" on public.league_members
   for select to authenticated
-  using (
+  using (user_id = auth.uid() or public.is_league_member(league_id));
+
+create policy "league_members_add_creator" on public.league_members
+  for insert to authenticated
+  with check (
     user_id = auth.uid()
-    or league_id in (select id from public.leagues where created_by = auth.uid())
-    or league_id in (select lm.league_id from public.league_members lm where lm.user_id = auth.uid())
+    and league_id in (select id from public.leagues where created_by = auth.uid())
   );
 
-drop policy if exists "league_members_join_self" on public.league_members;
-create policy "league_members_join_self" on public.league_members
-  for insert to authenticated
-  with check (user_id = auth.uid());
-
-drop policy if exists "league_members_leave" on public.league_members;
 create policy "league_members_leave" on public.league_members
   for delete to authenticated
-  using (user_id = auth.uid() or league_id in (select id from public.leagues where created_by = auth.uid()));
+  using (public.is_league_member(league_id));
 
--- league_schedule: read if member, insert if member (app auto-adds late joiners),
--- delete if creator. No direct update.
-drop policy if exists "league_schedule_member_read" on public.league_schedule;
+-- league_schedule: members may read; members may insert (auto-assign late joiners);
+-- creator may delete. No direct update.
 create policy "league_schedule_member_read" on public.league_schedule
   for select to authenticated
   using (league_id in (select lm.league_id from public.league_members lm where lm.user_id = auth.uid()));
 
-drop policy if exists "league_schedule_member_insert" on public.league_schedule;
 create policy "league_schedule_member_insert" on public.league_schedule
   for insert to authenticated
   with check (league_id in (select lm.league_id from public.league_members lm where lm.user_id = auth.uid()));
 
-drop policy if exists "league_schedule_creator_delete" on public.league_schedule;
 create policy "league_schedule_creator_delete" on public.league_schedule
   for delete to authenticated
   using (league_id in (select id from public.leagues where created_by = auth.uid()));
 
--- ratings: read if member. Vote rules enforced server-side:
--- * voter columns must be auth.uid()
--- * voter must be a league member
--- * target baker for that week must exist and must not be the voter (self-rating)
-drop policy if exists "ratings_member_read" on public.ratings;
+-- ratings: member reads; voting body inserted via policy (must be self, member, target
+-- baker in schedule, not self-rating), updates only own rows with same rules.
 create policy "ratings_member_read" on public.ratings
   for select to authenticated
   using (league_id in (select lm.league_id from public.league_members lm where lm.user_id = auth.uid()));
 
-drop policy if exists "ratings_vote" on public.ratings;
 create policy "ratings_vote" on public.ratings
   for insert to authenticated
   with check (
@@ -178,7 +198,6 @@ create policy "ratings_vote" on public.ratings
     )
   );
 
-drop policy if exists "ratings_update_own" on public.ratings;
 create policy "ratings_update_own" on public.ratings
   for update to authenticated
   using (user_id = auth.uid())
@@ -238,82 +257,7 @@ end;
 $$;
 
 revoke all on function public.join_league(text) from public;
-grant execute on function public.join_league(text) to authenticated;
-
--- Membership inserts now creator-only (their own league). Joins go through join_league().
-drop policy if exists "league_members_join_self" on public.league_members;
-create policy "league_members_add_creator" on public.league_members
-  for insert to authenticated
-  with check (
-    user_id = auth.uid()
-    and league_id in (select id from public.leagues where created_by = auth.uid())
-  );-- Root fix for "infinite recursion detected in policy for relation league_members" (42P17).
---
--- Cause: TWO nested cycles between the RLS policies:
---   A) self-cycle: policy league_members_select subqueried league_members (same table).
---   B) mutual cycle: policy leagues_member_select (on leagues) subqueried league_members,
---      while league_members_select subqueried leagues. Each policy re-ran the other's RLS.
---
--- Fix: route EVERY cross-table membership/creator check through a single SECURITY DEFINER
--- helper. A definer function runs as its owner (the table owner) -> NOT subject to RLS on
--- the tables it owns, so the nested `league_members` / `leagues` queries inside it never
--- re-enter any policy. No policy therefore subqueries the other table anymore -> no cycle.
---
--- The helper answers "is auth.uid() a member of this league, OR its creator?".
--- Policies only call the helper; NOTHING else. Apply AFTER 20260101000000_enable_rls.sql.
-
-create or replace function public.is_league_member(p_league_id uuid)
-returns boolean
-language sql
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1 from public.league_members lm
-     where lm.league_id = p_league_id and lm.user_id = auth.uid()
-  )
-  or exists (
-    select 1 from public.leagues l
-     where l.id = p_league_id and l.created_by = auth.uid()
-  );
-$$;
-
-revoke all on function public.is_league_member(uuid) from public;
-grant execute on function public.is_league_member(uuid) to authenticated;
-
--- leagues: read if member OR creator (helper only, no subquery into league_members).
-drop policy if exists "leagues_member_select" on public.leagues;
-create policy "leagues_member_select" on public.leagues
-  for select to authenticated
-  using (public.is_league_member(id));
-
-drop policy if exists "leagues_create" on public.leagues;
-create policy "leagues_create" on public.leagues
-  for insert to authenticated
-  with check (created_by = auth.uid());
-
-drop policy if exists "leagues_creator_update" on public.leagues;
-create policy "leagues_creator_update" on public.leagues
-  for update to authenticated
-  using (created_by = auth.uid())
-  with check (created_by = auth.uid());
-
--- league_members: your own rows, or anything via helper (no self/other table subquery).
-drop policy if exists "league_members_select" on public.league_members;
-create policy "league_members_select" on public.league_members
-  for select to authenticated
-  using (user_id = auth.uid() or public.is_league_member(league_id));
-
-drop policy if exists "league_members_join_self" on public.league_members;
-create policy "league_members_join_self" on public.league_members
-  for insert to authenticated
-  with check (user_id = auth.uid());
-
-drop policy if exists "league_members_leave" on public.league_members;
-create policy "league_members_leave" on public.league_members
-  for delete to authenticated
-  using (public.is_league_member(league_id));
--- create_league(): atomic create league + creator joins as member.
+grant execute on function public.join_league(text) to authenticated;-- create_league(): atomic create league + creator joins as member.
 -- SECURITY DEFINER (runs as owner) -> bypasses RLS on leagues/league_members, so the
 -- PostgREST INSERT..RETURNING re-check (SELECT policy on the returned row) can no longer
 -- 403 the creator the moment they create a league with return=representation.
@@ -372,147 +316,4 @@ begin
     alter table public.ratings
       add constraint ratings_one_vote_week unique (voter_id, league_id, week_number);
   end if;
-end $$;-- Canonical RLS state. Idempotent drop-and-recreate of every policy, so production
--- converges to the exact final policy set in one shot, and fresh init_db.sql ends clean.
---
--- WHY: 20260101000000_enable_rls.sql defined the first policy generation, then
--- 20260103000000_fix_league_members_recursion.sql redefined the leagues/league_members
--- ones. Both are already applied in production, so they stay as history. This file is
--- the single source of truth for the FINAL policy set:
---
---   * leagues_{member_select,create,creator_update}   -> helper is_league_member()
---   * league_members_{select,leave}                   -> helper is_league_member()
---   * league_members_add_creator                      -> creator may add members pre-launch
---   * league_schedule_{member_read,member_insert,creator_delete}
---   * ratings_{member_read,vote,update_own}
---
--- And it REMOVES two leftovers:
---   * league_members_join_self (2006010300) :: re-opened a direct insert hole: any
---     authenticated user could INSERT their own (league_id, user_id) row and bypass
---     join_league() RPC (recruiting-check, code lookup, dedupe). Joins must go through
---     the RPC only; the client no longer inserts league_members directly (create_league
---     RPC handles the creator, SECURITY DEFINER).
---   * league_members_leave keeps the helper for creator kick; member self-leave via using(helper).
-
-do $$
-declare t text;
-begin
-  foreach t in array array['profiles','leagues','league_members','league_schedule','ratings'] loop
-    execute format('drop policy if exists "profiles_select" on public.%I', t);
-    execute format('drop policy if exists "profiles_self_manage" on public.%I', t);
-    execute format('drop policy if exists "leagues_member_select" on public.%I', t);
-    execute format('drop policy if exists "leagues_create" on public.%I', t);
-    execute format('drop policy if exists "leagues_creator_update" on public.%I', t);
-    execute format('drop policy if exists "league_members_select" on public.%I', t);
-    execute format('drop policy if exists "league_members_join_self" on public.%I', t);
-    execute format('drop policy if exists "league_members_add_creator" on public.%I', t);
-    execute format('drop policy if exists "league_members_leave" on public.%I', t);
-    execute format('drop policy if exists "league_schedule_member_read" on public.%I', t);
-    execute format('drop policy if exists "league_schedule_member_insert" on public.%I', t);
-    execute format('drop policy if exists "league_schedule_creator_delete" on public.%I', t);
-    execute format('drop policy if exists "ratings_member_read" on public.%I', t);
-    execute format('drop policy if exists "ratings_vote" on public.%I', t);
-    execute format('drop policy if exists "ratings_update_own" on public.%I', t);
-  end loop;
 end $$;
-
--- profiles: any logged-in user may read usernames (leaderboards); only self can write.
-create policy "profiles_select" on public.profiles
-  for select to authenticated
-  using (true);
-
-create policy "profiles_self_manage" on public.profiles
-  for all to authenticated
-  using (id = auth.uid())
-  with check (id = auth.uid());
-
--- leagues: read if member OR creator, writable only by creator.
-create policy "leagues_member_select" on public.leagues
-  for select to authenticated
-  using (public.is_league_member(id));
-
-create policy "leagues_create" on public.leagues
-  for insert to authenticated
-  with check (created_by = auth.uid());
-
-create policy "leagues_creator_update" on public.leagues
-  for update to authenticated
-  using (created_by = auth.uid())
-  with check (created_by = auth.uid());
-
--- league_members: members may read/leave; creator may add members (pre-launch roster).
-create policy "league_members_select" on public.league_members
-  for select to authenticated
-  using (user_id = auth.uid() or public.is_league_member(league_id));
-
-create policy "league_members_add_creator" on public.league_members
-  for insert to authenticated
-  with check (
-    user_id = auth.uid()
-    and league_id in (select id from public.leagues where created_by = auth.uid())
-  );
-
-create policy "league_members_leave" on public.league_members
-  for delete to authenticated
-  using (public.is_league_member(league_id));
-
--- league_schedule: members may read; members may insert (auto-assign late joiners);
--- creator may delete. No direct update.
-create policy "league_schedule_member_read" on public.league_schedule
-  for select to authenticated
-  using (league_id in (select lm.league_id from public.league_members lm where lm.user_id = auth.uid()));
-
-create policy "league_schedule_member_insert" on public.league_schedule
-  for insert to authenticated
-  with check (league_id in (select lm.league_id from public.league_members lm where lm.user_id = auth.uid()));
-
-create policy "league_schedule_creator_delete" on public.league_schedule
-  for delete to authenticated
-  using (league_id in (select id from public.leagues where created_by = auth.uid()));
-
--- ratings: member reads; voting body is inserted via policy (must be self, member,
--- target baker in schedule, not self-rating), updates only own rows with same rules.
-create policy "ratings_member_read" on public.ratings
-  for select to authenticated
-  using (league_id in (select lm.league_id from public.league_members lm where lm.user_id = auth.uid()));
-
-create policy "ratings_vote" on public.ratings
-  for insert to authenticated
-  with check (
-    user_id = auth.uid()
-    and voter_id = auth.uid()
-    and league_id in (select lm.league_id from public.league_members lm where lm.user_id = auth.uid())
-    and exists (
-      select 1 from public.league_schedule s
-      where s.league_id = ratings.league_id
-        and s.week_number = ratings.week_number
-        and s.assigned_user_id is not null
-    )
-    and not exists (
-      select 1 from public.league_schedule s
-      where s.league_id = ratings.league_id
-        and s.week_number = ratings.week_number
-        and s.assigned_user_id = auth.uid()
-    )
-  );
-
-create policy "ratings_update_own" on public.ratings
-  for update to authenticated
-  using (user_id = auth.uid())
-  with check (
-    user_id = auth.uid()
-    and voter_id = auth.uid()
-    and league_id in (select lm.league_id from public.league_members lm where lm.user_id = auth.uid())
-    and exists (
-      select 1 from public.league_schedule s
-      where s.league_id = ratings.league_id
-        and s.week_number = ratings.week_number
-        and s.assigned_user_id is not null
-    )
-    and not exists (
-      select 1 from public.league_schedule s
-      where s.league_id = ratings.league_id
-        and s.week_number = ratings.week_number
-        and s.assigned_user_id = auth.uid()
-    )
-  );
