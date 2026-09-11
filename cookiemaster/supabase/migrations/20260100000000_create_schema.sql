@@ -26,7 +26,7 @@ create table if not exists public.leagues (
 create table if not exists public.league_members (
   league_id uuid not null references public.leagues(id) on delete cascade,
   user_id uuid not null references public.profiles(id) on delete cascade,
-  created_at timestptz not null default now(),
+  created_at timestamptz not null default now(),
   primary key (league_id, user_id)
 );
 
@@ -38,7 +38,7 @@ create table if not exists public.league_schedule (
   year int not null,
   assigned_user_id uuid references public.profiles(id) on delete set null,
   turn_order int,
-  created_at timestptz not null default now(),
+  created_at timestamptz not null default now(),
   unique (league_id, week_number, year)
 );
 
@@ -56,5 +56,5 @@ create table if not exists public.ratings (
   indulgence int not null default 0,
   score numeric,
   comment text,
-  created_at timestptz not null default now()
+  created_at timestamptz not null default now()
 );
