@@ -277,11 +277,6 @@ export default function LeagueView({ leagueId, onBack }) {
     setMessage(null)
 
     const globalScore = Number(calculateAverage(scores))
-    const existingRating = ratings.find(
-      (r) => 
-        (r.user_id === user.id || r.voter_id === user.id) && 
-        (r.week_number === selectedWeekToRate || (!r.week_number && selectedWeekToRate === currentWeek))
-    )
 
     const payload = {
       league_id: leagueId,
@@ -297,14 +292,10 @@ export default function LeagueView({ leagueId, onBack }) {
       week_number: Number(selectedWeekToRate)
     }
 
-    let error = null
-    if (existingRating) {
-      const res = await supabase.from('ratings').update(payload).eq('id', existingRating.id)
-      error = res.error
-    } else {
-      const res = await supabase.from('ratings').insert([payload])
-      error = res.error
-    }
+    // Atomic: one vote per (voter, league, week). Unique index ratings_one_vote_week in DB.
+    const { error } = await supabase
+      .from('ratings')
+      .upsert([payload], { onConflict: 'voter_id,league_id,week_number' })
 
     if (error) {
       setMessage({ type: 'error', text: `Erreur : ${error.message}` })
